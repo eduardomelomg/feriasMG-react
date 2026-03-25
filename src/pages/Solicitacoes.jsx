@@ -15,6 +15,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import NovaSolicitacaoModal from "../components/NovaSolicitacaoModal";
+import ModalSugestao from "../components/ModalSugestao";
 
 export default function Solicitacoes() {
   const [solicitacoes, setSolicitacoes] = useState([]);
@@ -33,6 +34,15 @@ export default function Solicitacoes() {
   const [dataInicioEdit, setDataInicioEdit] = useState("");
   const [dataFimEdit, setDataFimEdit] = useState("");
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
+
+  const [modalSugestaoAberto, setModalSugestaoAberto] = useState(false);
+  const [solicitacaoParaSugestao, setSolicitacaoParaSugestao] = useState(null);
+
+  // Crie também essa funçãozinha rápida:
+  function abrirModalSugestao(item) {
+    setSolicitacaoParaSugestao(item);
+    setModalSugestaoAberto(true);
+  }
 
   // --- 1. BUSCA INICIAL DE DADOS ---
   async function buscarTodasSolicitacoes() {
@@ -275,7 +285,7 @@ export default function Solicitacoes() {
                 {/* 6. Ações */}
                 <div className="col-span-3 flex items-center justify-end gap-2">
                   <button
-                    onClick={() => console.log("Abrir modal de Sugerir")}
+                    onClick={() => abrirModalSugestao(item)} // <--- MUDOU AQUI
                     className="flex items-center gap-1.5 px-3 py-1.5 border border-orange-900/50 text-orange-500 rounded-lg hover:bg-orange-900/20 transition-colors text-xs font-medium"
                   >
                     <Brain size={14} /> Sugerir
@@ -316,6 +326,16 @@ export default function Solicitacoes() {
         onClose={() => {
           setModalCriacaoAberto(false);
           buscarTodasSolicitacoes();
+        }}
+      />
+
+      <ModalSugestao
+        isOpen={modalSugestaoAberto}
+        onClose={() => setModalSugestaoAberto(false)}
+        solicitacao={solicitacaoParaSugestao}
+        onAccept={() => {
+          setModalSugestaoAberto(false);
+          buscarTodasSolicitacoes(); // Atualiza a lista na hora!
         }}
       />
 

@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+/* Reseta o tamanho da raiz para o Tailwind funcionar 100% livre */
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: #0a0a0a; /* Fundo principal escuro */
+  color: #ffffff;
+}

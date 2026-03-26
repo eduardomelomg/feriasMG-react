@@ -1,6 +1,13 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
-import { X, Calendar, User, AlertTriangle, Clock } from "lucide-react";
+import {
+  X,
+  Calendar,
+  User,
+  AlertTriangle,
+  Clock,
+  CheckCircle2,
+} from "lucide-react";
 
 export default function NovaSolicitacaoModal({ isOpen, onClose }) {
   const [colaboradores, setColaboradores] = useState([]);
@@ -9,12 +16,12 @@ export default function NovaSolicitacaoModal({ isOpen, onClose }) {
   const [dataFim, setDataFim] = useState("");
   const [salvando, setSalvando] = useState(false);
 
-  // Busca os colaboradores
+  // --- BUSCA INICIAL (Agora traz os saldos junto) ---
   useEffect(() => {
     async function buscarColaboradores() {
       const { data, error } = await supabase
         .from("colaboradores")
-        .select("colaborador_nome, setor")
+        .select("colaborador_nome, setor, dias_gozados, dias_direito") // Trazemos as colunas de saldo aqui
         .eq("status", "ativo")
         .order("colaborador_nome");
 
@@ -26,38 +33,39 @@ export default function NovaSolicitacaoModal({ isOpen, onClose }) {
     }
   }, [isOpen]);
 
-  // --- CÁLCULO DINÂMICO DE DIAS (Em tempo real) ---
+  // --- CÁLCULO DINÂMICO DE DIAS ---
   let totalDiasCalculado = 0;
   if (dataInicio && dataFim) {
     const inicio = new Date(dataInicio);
     const fim = new Date(dataFim);
     const diferenca = fim.getTime() - inicio.getTime();
     totalDiasCalculado = Math.ceil(diferenca / (1000 * 3600 * 24)) + 1;
-
-    // AQUI ENTRARÃO AS NOVAS REGRAS NO FUTURO
-    // Ex: descontar finais de semana, feriados, etc.
   }
+
+  // --- LÓGICA DE SALDO (Calculada em tempo real) ---
+  const colabInfo = colaboradores.find(
+    (c) => c.colaborador_nome === colaboradorSelecionado,
+  );
+  const diasDireito = colabInfo?.dias_direito ?? 30;
+  const diasGozados = colabInfo?.dias_gozados ?? 0;
+  const saldoAtual = diasDireito - diasGozados;
+  const saldoAposSolicitacao = saldoAtual - totalDiasCalculado;
+  const ultrapassouSaldo = totalDiasCalculado > saldoAtual;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!colaboradorSelecionado || !dataInicio || !dataFim) {
+    if (!colaboradorSelecionado || !dataInicio || !dataFim)
       return alert("Preencha todos os campos!");
-    }
-
-    if (totalDiasCalculado <= 0) {
-      return alert("A data de retorno deve ser maior que a data de início!");
-    }
+    if (totalDiasCalculado <= 0)
+      return alert("A data de retorno deve ser maior que o início!");
+    if (ultrapassouSaldo)
+      return alert("Erro: O colaborador não possui saldo suficiente!");
 
     setSalvando(true);
-
-    const colab = colaboradores.find(
-      (c) => c.colaborador_nome === colaboradorSelecionado,
-    );
-
     const { error } = await supabase.from("solicitacoes").insert([
       {
         colaborador_nome: colaboradorSelecionado,
-        setor: colab?.setor || "Não informado",
+        setor: colabInfo?.setor || "Não informado",
         data_inicio: dataInicio,
         data_fim: dataFim,
         status: "pendente",
@@ -68,13 +76,17 @@ export default function NovaSolicitacaoModal({ isOpen, onClose }) {
     setSalvando(false);
 
     if (error) {
-      alert("Erro ao criar solicitação: " + error.message);
+      alert("Erro ao criar: " + error.message);
     } else {
-      setColaboradorSelecionado("");
-      setDataInicio("");
-      setDataFim("");
+      resetarCampos();
       onClose();
     }
+  };
+
+  const resetarCampos = () => {
+    setColaboradorSelecionado("");
+    setDataInicio("");
+    setDataFim("");
   };
 
   if (!isOpen) return null;
@@ -94,11 +106,12 @@ export default function NovaSolicitacaoModal({ isOpen, onClose }) {
             <Calendar className="text-orange-500" /> Nova Solicitação
           </h2>
           <p className="text-xs text-gray-500 mt-1">
-            Agende o período de férias do colaborador.
+            O sistema validará o saldo automaticamente.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Colaborador */}
           <div>
             <label className="text-xs font-semibold text-gray-400 block mb-1">
               COLABORADOR
@@ -120,10 +133,11 @@ export default function NovaSolicitacaoModal({ isOpen, onClose }) {
             </div>
           </div>
 
+          {/* Datas */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-semibold text-gray-400 block mb-1">
-                DATA DE INÍCIO
+              <label className="text-xs font-semibold text-gray-400 block mb-1 uppercase">
+                Início
               </label>
               <input
                 type="date"
@@ -133,8 +147,8 @@ export default function NovaSolicitacaoModal({ isOpen, onClose }) {
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-gray-400 block mb-1">
-                DATA DE RETORNO
+              <label className="text-xs font-semibold text-gray-400 block mb-1 uppercase">
+                Retorno
               </label>
               <input
                 type="date"
@@ -145,93 +159,70 @@ export default function NovaSolicitacaoModal({ isOpen, onClose }) {
             </div>
           </div>
 
-          {/* --- LÓGICA DE SALDO DE FÉRIAS --- */}
-          {colaboradorSelecionado &&
-            (() => {
-              const colab = colaboradores.find(
-                (c) => c.colaborador_nome === colaboradorSelecionado,
-              );
-              const diasDireito = colab?.dias_direito ?? 30; // Se não tiver no banco, assume 30
-              const diasGozados = colab?.dias_gozados ?? 0;
-              const diasAGozar = diasDireito - diasGozados;
-              const saldoAposSolicitacao = diasAGozar - totalDiasCalculado;
-              const ultrapassouSaldo = totalDiasCalculado > diasAGozar;
+          {/* Feedback de Saldo e Trava */}
+          {colaboradorSelecionado && (
+            <div className="pt-2 space-y-3">
+              {/* Painel de Números */}
+              <div className="grid grid-cols-2 gap-2 text-[10px] font-bold uppercase tracking-wider">
+                <div className="bg-[#161616] p-3 rounded-lg border border-[#222]">
+                  <p className="text-gray-500 mb-1">Saldo Atual</p>
+                  <p className="text-white text-base">{saldoAtual} dias</p>
+                </div>
+                <div
+                  className={`p-3 rounded-lg border ${saldoAposSolicitacao < 0 ? "bg-red-500/10 border-red-500/20" : "bg-[#161616] border-[#222]"}`}
+                >
+                  <p className="text-gray-500 mb-1">Restante</p>
+                  <p
+                    className={`text-base ${saldoAposSolicitacao < 0 ? "text-red-500" : "text-white"}`}
+                  >
+                    {saldoAposSolicitacao} dias
+                  </p>
+                </div>
+              </div>
 
-              return (
-                <div className="pt-2 space-y-3">
-                  {/* Info de Saldo Atual */}
-                  <div className="flex items-center justify-between text-xs text-gray-400 bg-[#161616] p-3 rounded-lg border border-[#222]">
-                    <span>
-                      Saldo atual:{" "}
-                      <strong className="text-white">{diasAGozar} dias</strong>
-                    </span>
-                    <span>
-                      Após aprovação:{" "}
-                      <strong
-                        className={
-                          saldoAposSolicitacao < 0
-                            ? "text-red-500"
-                            : "text-white"
-                        }
-                      >
-                        {saldoAposSolicitacao} dias
-                      </strong>
+              {/* Alertas Dinâmicos */}
+              {totalDiasCalculado > 0 &&
+                (ultrapassouSaldo ? (
+                  <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 p-3 rounded-xl text-red-500 animate-in slide-in-from-top-1">
+                    <AlertTriangle size={18} />
+                    <span className="text-xs font-bold leading-tight">
+                      Atenção: O colaborador não tem saldo suficiente para{" "}
+                      {totalDiasCalculado} dias.
                     </span>
                   </div>
+                ) : (
+                  <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 p-3 rounded-xl text-green-500 animate-in slide-in-from-top-1">
+                    <CheckCircle2 size={18} />
+                    <span className="text-xs font-bold">
+                      Solicitação de {totalDiasCalculado} dias permitida.
+                    </span>
+                  </div>
+                ))}
 
-                  {/* Badge Dinâmica de Status */}
-                  {totalDiasCalculado > 0 ? (
-                    ultrapassouSaldo ? (
-                      <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 p-3 rounded-lg text-red-500 animate-in fade-in slide-in-from-top-2">
-                        <AlertTriangle size={16} />
-                        <span className="text-sm font-medium">
-                          Saldo insuficiente! O colaborador só possui{" "}
-                          {diasAGozar} dias a gozar.
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between bg-orange-500/10 border border-orange-500/20 p-3 rounded-lg animate-in fade-in slide-in-from-top-2">
-                        <div className="flex items-center gap-2 text-orange-500">
-                          <Clock size={16} />
-                          <span className="text-sm font-medium">
-                            Dias a descontar do saldo:
-                          </span>
-                        </div>
-                        <span className="text-orange-500 font-bold font-mono text-lg">
-                          {totalDiasCalculado}
-                        </span>
-                      </div>
-                    )
-                  ) : dataInicio && dataFim ? (
-                    <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 p-3 rounded-lg text-red-500 animate-in fade-in slide-in-from-top-2">
-                      <AlertTriangle size={16} />
-                      <span className="text-sm font-medium">
-                        A data de retorno deve ser posterior ao início.
-                      </span>
-                    </div>
-                  ) : null}
-
-                  {/* Botão de Envio com a Nova Trava */}
-                  <button
-                    type="submit"
-                    disabled={
-                      salvando ||
-                      !dataInicio ||
-                      !dataFim ||
-                      totalDiasCalculado <= 0 ||
-                      ultrapassouSaldo
-                    }
-                    className="w-full bg-orange-600 hover:bg-orange-700 disabled:bg-gray-700 disabled:text-gray-400 text-white font-bold py-3 rounded-lg transition-colors text-sm shadow-lg mt-4 flex justify-center items-center"
-                  >
-                    {salvando
-                      ? "SALVANDO..."
-                      : ultrapassouSaldo
-                        ? "SALDO EXCEDIDO"
-                        : "ENVIAR SOLICITAÇÃO"}
-                  </button>
-                </div>
-              );
-            })()}
+              {/* Botão de Ação com Trava */}
+              <button
+                type="submit"
+                disabled={
+                  salvando ||
+                  !dataInicio ||
+                  !dataFim ||
+                  totalDiasCalculado <= 0 ||
+                  ultrapassouSaldo
+                }
+                className={`w-full font-black py-4 rounded-xl transition-all text-sm shadow-lg mt-2 flex justify-center items-center gap-2 ${
+                  ultrapassouSaldo
+                    ? "bg-gray-800 text-gray-500 cursor-not-allowed"
+                    : "bg-orange-600 hover:bg-orange-700 text-white active:scale-95"
+                }`}
+              >
+                {salvando
+                  ? "PROCESSANDO..."
+                  : ultrapassouSaldo
+                    ? "SALDO INSUFICIENTE"
+                    : "ENVIAR PARA APROVAÇÃO"}
+              </button>
+            </div>
+          )}
         </form>
       </div>
     </div>

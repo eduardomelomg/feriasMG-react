@@ -19,19 +19,20 @@ import {
   LogOut,
 } from "lucide-react";
 
+import { supabase } from "./lib/supabase"; // Importe o supabase para a função de logout
+
+// Importe as Páginas
 import Dashboard from "./pages/Dashboard";
 import Solicitacoes from "./pages/Solicitacoes";
 import Calendario from "./pages/Calendario";
-import Pendencias from "./pages/pendencias";
 import Colaboradores from "./pages/Colaboradores";
 import Usuarios from "./pages/GestaoUsuarios";
-import Relatorios from "./pages/Relatorios";
 import Configuracoes from "./pages/configuracoes";
+import Login from "./pages/login";
 
 // Componente da Barra Lateral (Sidebar)
 function Sidebar() {
   const location = useLocation();
-
   const { usuarioLogado } = useAuth();
 
   const menuItems = [
@@ -41,13 +42,6 @@ function Sidebar() {
       name: "Solicitações",
       path: "/solicitacoes",
       icon: <FileText size={20} />,
-    },
-    // Colocamos adminOnly nas 3 telas que o Coordenador NÃO pode ver:
-    {
-      name: "Pendências",
-      path: "/pendencias",
-      icon: <AlertTriangle size={20} />,
-      adminOnly: true,
     },
     {
       name: "Colaboradores",
@@ -61,12 +55,6 @@ function Sidebar() {
       adminOnly: true,
     },
     {
-      name: "Relatórios",
-      path: "/relatorios",
-      icon: <BarChart3 size={20} />,
-      adminOnly: true,
-    },
-    {
       name: "Configurações",
       path: "/configuracoes",
       icon: <Settings size={20} />,
@@ -75,26 +63,27 @@ function Sidebar() {
 
   // Filtra o menu com base no perfil do usuário
   const menusPermitidos = menuItems.filter((item) => {
-    // Admin TI e Gestão DP veem absolutamente tudo
     if (
-      usuarioLogado.perfil === "Admin TI" ||
-      usuarioLogado.perfil === "Gestão DP"
+      usuarioLogado?.perfil === "Admin TI" ||
+      usuarioLogado?.perfil === "Gestão DP"
     ) {
       return true;
     }
 
-    // Coordenador vê tudo, EXCETO as 3 telas marcadas como adminOnly
-    if (usuarioLogado.perfil === "Coordenador") {
+    if (usuarioLogado?.perfil === "Coordenador") {
       return !item.adminOnly;
     }
 
-    // Qualquer outro perfil não cadastrado não vê a barra lateral
     return false;
   });
 
+  // Função para deslogar do Supabase
+  const fazerLogout = async () => {
+    await supabase.auth.signOut();
+  };
+
   return (
     <div className="w-64 h-screen bg-[#111111] text-gray-400 flex flex-col border-r border-[#222]">
-      {/* Logo (mantém igual) */}
       <div className="p-6 flex items-center gap-3">
         <div className="w-8 h-8 bg-gray-800 rounded flex items-center justify-center text-orange-400 font-bold">
           MG
@@ -102,12 +91,11 @@ function Sidebar() {
         <div>
           <h1 className="text-white font-semibold text-sm">Mendonça Galvão</h1>
           <p className="text-[10px] text-gray-500 tracking-wider">
-            CONTROLE DE FÉRIAS
+            CONTROLO DE FÉRIAS
           </p>
         </div>
       </div>
 
-      {/* Navegação renderizando APENAS os menus permitidos */}
       <nav className="flex-1 px-4 space-y-1 mt-4">
         {menusPermitidos.map((item) => {
           const isActive = location.pathname === item.path;
@@ -127,70 +115,83 @@ function Sidebar() {
         })}
       </nav>
 
-      {/* Rodapé dinâmico usando os dados do Contexto! */}
-      <div className="p-4 border-t border-[#222]">
-        <p className="text-[10px] text-gray-600 font-semibold mb-2 px-2">
-          PERFIL ATIVO
-        </p>
-        <div className="bg-[#1a1a1a] p-2 rounded border border-orange-900/30 flex items-center gap-2 mb-4">
-          <div className="w-2 h-2 rounded-full bg-orange-500"></div>
-          <span className="text-orange-400 text-xs font-medium">
-            {usuarioLogado.perfil}
-          </span>
-        </div>
-
-        <div className="flex items-center justify-between px-2">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-green-900/40 text-green-500 rounded-full flex items-center justify-center text-sm font-bold border border-green-900">
-              {usuarioLogado.iniciais}
-            </div>
-            <div className="overflow-hidden w-32">
-              <p className="text-sm text-white truncate">
-                {usuarioLogado.nome}
-              </p>
-              <p className="text-[10px] text-gray-500 truncate">
-                {usuarioLogado.email}
-              </p>
-            </div>
+      {/* Rodapé dinâmico usando os dados do Contexto */}
+      {usuarioLogado && (
+        <div className="p-4 border-t border-[#222]">
+          <p className="text-[10px] text-gray-600 font-semibold mb-2 px-2 uppercase">
+            Perfil Ativo
+          </p>
+          <div className="bg-[#1a1a1a] p-2 rounded border border-orange-900/30 flex items-center gap-2 mb-4">
+            <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+            <span className="text-orange-400 text-xs font-medium uppercase tracking-tighter">
+              {usuarioLogado.perfil}
+            </span>
           </div>
-          <button className="text-gray-500 hover:text-white transition-colors">
-            <LogOut size={16} />
-          </button>
+
+          <div className="flex items-center justify-between px-2">
+            <div className="flex items-center gap-2 truncate">
+              <div className="w-8 h-8 bg-green-900/40 text-green-500 rounded-full flex items-center justify-center text-sm font-bold border border-green-900 shrink-0">
+                {usuarioLogado.iniciais || "MG"}
+              </div>
+              <div className="overflow-hidden">
+                <p className="text-sm text-white truncate font-bold">
+                  {usuarioLogado.nome || "Usuário"}
+                </p>
+                <p className="text-[10px] text-gray-500 truncate">
+                  {usuarioLogado.email || "email@empresa.com"}
+                </p>
+              </div>
+            </div>
+            {/* O botão LogOut agora funciona */}
+            <button
+              onClick={fazerLogout}
+              className="text-gray-500 hover:text-red-500 transition-colors p-2 hover:bg-red-500/10 rounded-lg shrink-0"
+              title="Sair do Sistema"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
-// Telas Temporárias para vermos o roteamento funcionarff
-const EmConstrucao = ({ titulo }) => (
-  <div className="p-8">
-    <h1 className="text-2xl text-white font-bold">{titulo}</h1>
-  </div>
-);
+// Sub-componente que decide se mostra o Login ou as Rotas
+function EstruturaBase() {
+  const { usuarioLogado } = useAuth(); // O seu contexto que monitoriza o utilizador
 
+  // Se o utilizador não existir no contexto, mostra o Ecrã de Login inteiro!
+  if (!usuarioLogado) {
+    return <Login />;
+  }
+
+  // Se existir, mostra o sistema normal
+  return (
+    <Router>
+      <div className="flex h-screen bg-[#0a0a0a] font-sans">
+        <Sidebar />
+
+        <main className="flex-1 overflow-y-auto">
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/calendario" element={<Calendario />} />
+            <Route path="/solicitacoes" element={<Solicitacoes />} />
+            <Route path="/colaboradores" element={<Colaboradores />} />
+            <Route path="/usuarios" element={<Usuarios />} />
+            <Route path="/configuracoes" element={<Configuracoes />} />
+          </Routes>
+        </main>
+      </div>
+    </Router>
+  );
+}
+
+// O App principal que serve de Contentor
 export default function App() {
   return (
     <AuthProvider>
-      <Router>
-        <div className="flex h-screen bg-[#0a0a0a] font-sans">
-          <Sidebar />
-
-          {/* Área Principal onde o conteúdo das páginas vai renderizar */}
-          <main className="flex-1 overflow-y-auto">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/calendario" element={<Calendario />} />
-              <Route path="/solicitacoes" element={<Solicitacoes />} />
-              <Route path="/pendencias" element={<Pendencias />} />
-              <Route path="/colaboradores" element={<Colaboradores />} />
-              <Route path="/usuarios" element={<Usuarios />} />
-              <Route path="/relatorios" element={<Relatorios />} />
-              <Route path="/configuracoes" element={<Configuracoes />} />
-            </Routes>
-          </main>
-        </div>
-      </Router>
+      <EstruturaBase />
     </AuthProvider>
   );
 }

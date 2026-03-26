@@ -4,30 +4,42 @@ import {
   Users,
   UserPlus,
   Trash2,
-  Briefcase,
-  Mail,
   Edit2,
   X,
-  Save,
+  AlertCircle,
+  Timer,
+  CheckCircle2,
+  Calendar as CalendarIcon,
+  Search,
+  Filter,
+  Mail,
+  Briefcase,
 } from "lucide-react";
+import { differenceInMonths, parseISO, format } from "date-fns";
 
 export default function Colaboradores() {
   const [colaboradores, setColaboradores] = useState([]);
   const [carregando, setCarregando] = useState(true);
 
-  // --- Estados do Form de CADASTRO ---
+  // --- ESTADOS DE FILTRO ---
+  const [busca, setBusca] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("todos");
+
+  // --- ESTADOS DE CADASTRO ---
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [setor, setSetor] = useState("Contábil");
+  const [dataAdmissao, setDataAdmissao] = useState("");
   const [diasDireito, setDiasDireito] = useState(30);
   const [diasGozados, setDiasGozados] = useState(0);
 
-  // --- Estados do Modal de EDIÇÃO ---
+  // --- ESTADOS DE EDIÇÃO ---
   const [modalEdicaoAberto, setModalEdicaoAberto] = useState(false);
   const [colabEmEdicao, setColabEmEdicao] = useState(null);
   const [editNome, setEditNome] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editSetor, setEditSetor] = useState("");
+  const [editDataAdmissao, setEditDataAdmissao] = useState("");
   const [editDiasDireito, setEditDiasDireito] = useState(30);
   const [editDiasGozados, setEditDiasGozados] = useState(0);
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
@@ -48,11 +60,10 @@ export default function Colaboradores() {
         .from("colaboradores")
         .select("*")
         .order("colaborador_nome", { ascending: true });
-
       if (error) throw error;
       setColaboradores(data || []);
     } catch (error) {
-      console.error("Erro na busca:", error.message);
+      console.error(error.message);
     } finally {
       setCarregando(false);
     }
@@ -62,90 +73,16 @@ export default function Colaboradores() {
     buscarColaboradores();
   }, []);
 
-  // --- CRUD: CREATE ---
-  const cadastrarColaborador = async (e) => {
-    e.preventDefault();
-    if (!nome || !email) return alert("Digite o nome e o e-mail!");
-
-    const { error } = await supabase.from("colaboradores").insert([
-      {
-        colaborador_nome: nome,
-        email: email,
-        setor: setor,
-        status: "ativo",
-        dias_direito: parseInt(diasDireito) || 30,
-        dias_gozados: parseInt(diasGozados) || 0,
-      },
-    ]);
-
-    if (error) {
-      alert("Erro ao cadastrar: " + error.message);
-    } else {
-      // Limpa o form
-      setNome("");
-      setEmail("");
-      setDiasDireito(30);
-      setDiasGozados(0);
-      buscarColaboradores();
-    }
+  const obterStatusFerias = (dataAdm, gozados, direito = 30) => {
+    if (!dataAdm) return { label: "S/ DATA", cor: "text-gray-500" };
+    const meses = differenceInMonths(new Date(), parseISO(dataAdm));
+    const saldo = direito - (gozados || 0);
+    if (meses >= 23 && saldo > 0)
+      return { label: "VENCIDA (DOBRA)", cor: "text-red-500" };
+    if (meses >= 18 && saldo > 0)
+      return { label: "EM ALERTA", cor: "text-yellow-500" };
+    return { label: "EM DIA", cor: "text-green-500" };
   };
-
-  // --- CRUD: DELETE ---
-  const deletarColaborador = async (id) => {
-    if (!confirm("Tem certeza que deseja excluir este colaborador?")) return;
-    const { error } = await supabase
-      .from("colaboradores")
-      .delete()
-      .eq("id", id);
-    if (error) alert(error.message);
-    else buscarColaboradores();
-  };
-
-  // --- CRUD: PREPARAR UPDATE ---
-  const abrirModalEdicao = (colab) => {
-    setColabEmEdicao(colab);
-    setEditNome(colab.colaborador_nome);
-    setEditEmail(colab.email || "");
-    setEditSetor(colab.setor);
-    setEditDiasDireito(colab.dias_direito ?? 30);
-    setEditDiasGozados(colab.dias_gozados ?? 0);
-    setModalEdicaoAberto(true);
-  };
-
-  // --- CRUD: SALVAR UPDATE ---
-  const salvarEdicao = async (e) => {
-    e.preventDefault();
-    if (!editNome || !editEmail)
-      return alert("Nome e e-mail são obrigatórios!");
-
-    setSalvandoEdicao(true);
-    const { error } = await supabase
-      .from("colaboradores")
-      .update({
-        colaborador_nome: editNome,
-        email: editEmail,
-        setor: editSetor,
-        dias_direito: parseInt(editDiasDireito) || 0,
-        dias_gozados: parseInt(editDiasGozados) || 0,
-      })
-      .eq("id", colabEmEdicao.id);
-
-    setSalvandoEdicao(false);
-
-    if (error) {
-      alert("Erro ao atualizar: " + error.message);
-    } else {
-      setModalEdicaoAberto(false);
-      buscarColaboradores();
-    }
-  };
-
-  // Função auxiliar matemática
-  const calcularDias = (direito = 30, gozados = 0) => ({
-    direito,
-    gozados,
-    aGozar: direito - gozados,
-  });
 
   const obterSigla = (setor) => {
     const siglas = {
@@ -155,56 +92,407 @@ export default function Colaboradores() {
       Fiscal: "FISC",
       Contábil: "CONT",
       "Recursos Humanos": "RH",
-      Societário: "SOC",
     };
-    return siglas[setor] || setor; // Retorna a sigla ou o nome original se não encontrar
+    return siglas[setor] || setor;
+  };
+
+  const cadastrarColaborador = async (e) => {
+    e.preventDefault();
+    if (!nome || !email || !dataAdmissao)
+      return alert("Preencha os campos obrigatórios!");
+    const { error } = await supabase.from("colaboradores").insert([
+      {
+        colaborador_nome: nome,
+        email,
+        setor,
+        data_admissao: dataAdmissao,
+        status: "ativo",
+        dias_direito: parseInt(diasDireito),
+        dias_gozados: parseInt(diasGozados),
+      },
+    ]);
+    if (error) alert(error.message);
+    else {
+      setNome("");
+      setEmail("");
+      setDataAdmissao("");
+      setDiasDireito(30);
+      setDiasGozados(0);
+      buscarColaboradores();
+    }
+  };
+
+  const deletarColaborador = async (id) => {
+    if (!confirm("Excluir este colaborador?")) return;
+    const { error } = await supabase
+      .from("colaboradores")
+      .delete()
+      .eq("id", id);
+    if (error) alert(error.message);
+    else buscarColaboradores();
+  };
+
+  const abrirModalEdicao = (colab) => {
+    setColabEmEdicao(colab);
+    setEditNome(colab.colaborador_nome);
+    setEditEmail(colab.email || "");
+    setEditSetor(colab.setor);
+    setEditDataAdmissao(colab.data_admissao || "");
+    setEditDiasDireito(colab.dias_direito ?? 30);
+    setEditDiasGozados(colab.dias_gozados ?? 0);
+    setModalEdicaoAberto(true);
+  };
+
+  const salvarEdicao = async (e) => {
+    e.preventDefault();
+    setSalvandoEdicao(true);
+    const { error } = await supabase
+      .from("colaboradores")
+      .update({
+        colaborador_nome: editNome,
+        email: editEmail,
+        setor: editSetor,
+        data_admissao: editDataAdmissao,
+        dias_direito: parseInt(editDiasDireito),
+        dias_gozados: parseInt(editDiasGozados),
+      })
+      .eq("id", colabEmEdicao.id);
+    setSalvandoEdicao(false);
+    if (error) alert(error.message);
+    else {
+      setModalEdicaoAberto(false);
+      buscarColaboradores();
+    }
+  };
+
+  const colaboradoresFiltrados = colaboradores.filter((colab) => {
+    const statusInfo = obterStatusFerias(
+      colab.data_admissao,
+      colab.dias_gozados,
+      colab.dias_direito,
+    );
+    const nomeBate = colab.colaborador_nome
+      ?.toLowerCase()
+      .includes(busca.toLowerCase());
+    const statusBate =
+      filtroStatus === "todos" || statusInfo.label === filtroStatus;
+    return nomeBate && statusBate;
+  });
+
+  const estatisticas = {
+    vencidas: colaboradores.filter(
+      (c) =>
+        obterStatusFerias(c.data_admissao, c.dias_gozados).label ===
+        "VENCIDA (DOBRA)",
+    ).length,
+    alerta: colaboradores.filter(
+      (c) =>
+        obterStatusFerias(c.data_admissao, c.dias_gozados).label ===
+        "EM ALERTA",
+    ).length,
+    total: colaboradores.length,
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto relative">
-      <h1 className="text-2xl text-white font-bold mb-8 flex items-center gap-2">
-        <Users className="text-orange-500" /> Gestão de Colaboradores
-      </h1>
+    <div className="p-8 max-w-7xl mx-auto relative text-white">
+      <header className="mb-6">
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+          <Users className="text-orange-500" /> Gestão de Equipe
+        </h1>
+      </header>
+
+      {/* Dashboard */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="bg-[#0e0e0e] border border-[#1a1a1a] p-5 rounded-xl flex items-center gap-5 shadow-sm">
+          <div className="bg-red-500/10 p-3.5 rounded-lg text-red-500">
+            <AlertCircle size={24} />
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-1">
+              Vencidas
+            </p>
+            <p className="text-2xl font-bold leading-none">
+              {estatisticas.vencidas}
+            </p>
+          </div>
+        </div>
+        <div className="bg-[#0e0e0e] border border-[#1a1a1a] p-5 rounded-xl flex items-center gap-5 shadow-sm">
+          <div className="bg-yellow-500/10 p-3.5 rounded-lg text-yellow-500">
+            <Timer size={24} />
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-1">
+              Alertas
+            </p>
+            <p className="text-2xl font-bold leading-none">
+              {estatisticas.alerta}
+            </p>
+          </div>
+        </div>
+        <div className="bg-[#0e0e0e] border border-[#1a1a1a] p-5 rounded-xl flex items-center gap-5 shadow-sm">
+          <div className="bg-green-500/10 p-3.5 rounded-lg text-green-500">
+            <CheckCircle2 size={24} />
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-1">
+              Total Ativos
+            </p>
+            <p className="text-2xl font-bold leading-none">
+              {estatisticas.total}
+            </p>
+          </div>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* --- FORMULÁRIO DE CADASTRO (Lateral) --- */}
-        <div className="lg:col-span-4 bg-[#111] border border-[#222] p-6 rounded-xl h-fit">
-          <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
+        {/* Form Cadastro */}
+        <div className="lg:col-span-4 bg-[#111] border border-[#222] p-6 rounded-xl h-fit shadow-xl">
+          <h2 className="text-white font-semibold mb-6 flex items-center gap-2">
             <UserPlus size={18} className="text-orange-500" /> Novo Cadastro
           </h2>
           <form onSubmit={cadastrarColaborador} className="space-y-4">
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">
-                NOME COMPLETO
+            <input
+              type="text"
+              placeholder="Nome Completo"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none focus:border-orange-500 transition-all"
+            />
+            <input
+              type="email"
+              placeholder="E-mail"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none focus:border-orange-500 transition-all"
+            />
+            <div className="grid grid-cols-1 gap-1">
+              <label className="text-[10px] text-gray-500 font-bold uppercase ml-1">
+                Admissão
               </label>
+              <input
+                type="date"
+                value={dataAdmissao}
+                onChange={(e) => setDataAdmissao(e.target.value)}
+                className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none [color-scheme:dark]"
+              />
+            </div>
+            <select
+              value={setor}
+              onChange={(e) => setSetor(e.target.value)}
+              className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none cursor-pointer"
+            >
+              {listaSetores.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+            <div className="grid grid-cols-2 gap-4">
+              <input
+                type="number"
+                placeholder="Direito"
+                value={diasDireito}
+                onChange={(e) => setDiasDireito(e.target.value)}
+                className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none"
+              />
+              <input
+                type="number"
+                placeholder="Gozados"
+                value={diasGozados}
+                onChange={(e) => setDiasGozados(e.target.value)}
+                className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3.5 rounded-lg transition-all shadow-lg shadow-orange-950/20 uppercase text-xs"
+            >
+              Cadastrar
+            </button>
+          </form>
+        </div>
+
+        {/* Listagem */}
+        <div className="lg:col-span-8 flex flex-col gap-3">
+          {/* Barra de Filtros */}
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search
+                size={18}
+                className="absolute left-3 top-3.5 text-gray-500"
+              />
               <input
                 type="text"
-                value={nome}
-                onChange={(e) => setNome(e.target.value)}
-                className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-2.5 text-white text-sm focus:border-orange-500 outline-none transition-all"
-                placeholder="Ex: João Silva"
+                placeholder="Pesquisar por nome..."
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                className="w-full bg-[#111] border border-[#222] rounded-xl p-3.5 pl-10 text-sm outline-none focus:border-orange-500 transition-all"
               />
             </div>
+            <div className="flex items-center gap-2 bg-[#111] border border-[#222] rounded-xl px-4">
+              <Filter size={16} className="text-gray-500" />
+              <select
+                value={filtroStatus}
+                onChange={(e) => setFiltroStatus(e.target.value)}
+                className="bg-transparent text-xs font-black uppercase p-3.5 outline-none cursor-pointer [color-scheme:dark]"
+              >
+                <option value="todos">Todos Status</option>
+                <option value="EM DIA">Em Dia</option>
+                <option value="EM ALERTA">Em Alerta</option>
+                <option value="VENCIDA (DOBRA)">Vencidas</option>
+              </select>
+            </div>
+          </div>
 
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">
-                E-MAIL PROFISSIONAL
-              </label>
+          <div className="bg-[#111] border border-[#222] rounded-xl overflow-hidden shadow-2xl">
+            <div className="p-4 bg-[#161616] border-b border-[#222]">
+              <div className="grid grid-cols-12 gap-4 text-[10px] text-gray-500 font-black uppercase tracking-widest">
+                <div className="col-span-5">Colaborador / Detalhes</div>
+                <div className="col-span-2 text-center">Status CLT</div>
+                <div className="col-span-1 text-center">Dir.</div>
+                <div className="col-span-1 text-center">Goz.</div>
+                <div className="col-span-2 text-center text-orange-500">
+                  Saldo
+                </div>
+                <div className="col-span-1 text-right">Ação</div>
+              </div>
+            </div>
+
+            <div className="divide-y divide-[#222]">
+              {carregando ? (
+                <p className="p-10 text-center text-gray-500 uppercase text-xs animate-pulse">
+                  Carregando...
+                </p>
+              ) : colaboradoresFiltrados.length === 0 ? (
+                <p className="p-10 text-center text-gray-500 text-sm">
+                  Nenhum registro encontrado.
+                </p>
+              ) : (
+                colaboradoresFiltrados.map((colab) => {
+                  const status = obterStatusFerias(
+                    colab.data_admissao,
+                    colab.dias_gozados,
+                    colab.dias_direito,
+                  );
+                  const aGozar =
+                    (colab.dias_direito || 30) - (colab.dias_gozados || 0);
+                  return (
+                    <div
+                      key={colab.id}
+                      className="p-5 hover:bg-[#141414] transition-colors group"
+                    >
+                      <div className="grid grid-cols-12 gap-4 items-center">
+                        <div className="col-span-5 flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-full bg-[#1a1a1a] flex items-center justify-center text-orange-500 font-bold border border-[#333] shrink-0 text-sm">
+                            {colab.colaborador_nome.charAt(0)}
+                          </div>
+                          <div className="truncate">
+                            <p className="text-white font-bold text-sm truncate uppercase leading-tight">
+                              {colab.colaborador_nome}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5">
+                              <p className="text-xs text-gray-400 flex items-center gap-1.5">
+                                <Mail size={14} className="text-gray-600" />{" "}
+                                {colab.email || "---"}
+                              </p>
+                              <p className="text-xs text-orange-500/90 font-black flex items-center gap-1.5 uppercase tracking-tighter">
+                                <Briefcase size={14} />{" "}
+                                {obterSigla(colab.setor)}
+                              </p>
+                              <p className="text-xs text-gray-500 flex items-center gap-1.5 font-bold">
+                                <CalendarIcon size={14} />{" "}
+                                {colab.data_admissao
+                                  ? format(
+                                      parseISO(colab.data_admissao),
+                                      "dd/MM/yy",
+                                    )
+                                  : "---"}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="col-span-2 text-center font-black uppercase text-[11px] tracking-tight">
+                          <span className={status.cor}>{status.label}</span>
+                        </div>
+                        <div className="col-span-1 text-center text-sm font-mono text-gray-400">
+                          {colab.dias_direito}d
+                        </div>
+                        <div className="col-span-1 text-center text-sm font-mono text-gray-400">
+                          {colab.dias_gozados || 0}d
+                        </div>
+                        <div className="col-span-2 text-center text-base font-black font-mono">
+                          <span
+                            className={
+                              aGozar < 0 ? "text-red-500" : "text-white"
+                            }
+                          >
+                            {aGozar}d
+                          </span>
+                        </div>
+
+                        {/* Ações Visíveis Permanentemente */}
+                        <div className="col-span-1 flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => abrirModalEdicao(colab)}
+                            className="p-2 text-gray-500 hover:text-white hover:bg-[#222] rounded-lg transition-all"
+                            title="Editar"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            onClick={() => deletarColaborador(colab.id)}
+                            className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                            title="Excluir"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Modal Edição */}
+      {modalEdicaoAberto && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-[#111] border border-[#222] rounded-2xl w-full max-w-md p-6 relative shadow-2xl">
+            <button
+              onClick={() => setModalEdicaoAberto(false)}
+              className="absolute right-4 top-4 text-gray-500 hover:text-white"
+            >
+              <X size={20} />
+            </button>
+            <h2 className="text-xl font-bold text-white flex items-center gap-2 mb-6">
+              <Edit2 className="text-orange-500" /> Editar Ficha
+            </h2>
+            <form onSubmit={salvarEdicao} className="space-y-4">
+              <input
+                type="text"
+                value={editNome}
+                onChange={(e) => setEditNome(e.target.value)}
+                className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none focus:border-orange-500"
+              />
               <input
                 type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-2.5 text-white text-sm focus:border-orange-500 outline-none transition-all"
-                placeholder="joao@empresa.com"
+                value={editEmail}
+                onChange={(e) => setEditEmail(e.target.value)}
+                className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none"
               />
-            </div>
-
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">SETOR</label>
+              <input
+                type="date"
+                value={editDataAdmissao}
+                onChange={(e) => setEditDataAdmissao(e.target.value)}
+                className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none [color-scheme:dark]"
+              />
               <select
-                value={setor}
-                onChange={(e) => setSetor(e.target.value)}
-                className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-2.5 text-white text-sm focus:border-orange-500 outline-none appearance-none cursor-pointer"
+                value={editSetor}
+                onChange={(e) => setEditSetor(e.target.value)}
+                className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none"
               >
                 {listaSetores.map((s) => (
                   <option key={s} value={s}>
@@ -212,238 +500,26 @@ export default function Colaboradores() {
                   </option>
                 ))}
               </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 pt-2">
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">
-                  DIAS DE DIREITO
-                </label>
+              <div className="grid grid-cols-2 gap-4">
                 <input
                   type="number"
-                  min="0"
-                  value={diasDireito}
-                  onChange={(e) => setDiasDireito(e.target.value)}
-                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-2.5 text-white text-sm focus:border-orange-500 outline-none font-mono"
+                  value={editDiasDireito}
+                  onChange={(e) => setEditDiasDireito(e.target.value)}
+                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none"
                 />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">
-                  DIAS GOZADOS
-                </label>
                 <input
                   type="number"
-                  min="0"
-                  value={diasGozados}
-                  onChange={(e) => setDiasGozados(e.target.value)}
-                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-2.5 text-white text-sm focus:border-orange-500 outline-none font-mono"
+                  value={editDiasGozados}
+                  onChange={(e) => setEditDiasGozados(e.target.value)}
+                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none"
                 />
               </div>
-            </div>
-
-            <button
-              type="submit"
-              className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 rounded-lg transition-colors text-sm shadow-lg shadow-orange-900/20 mt-2"
-            >
-              CADASTRAR COLABORADOR
-            </button>
-          </form>
-        </div>
-
-        {/* --- LISTAGEM DE COLABORADORES --- */}
-        <div className="lg:col-span-8 bg-[#111] border border-[#222] rounded-xl overflow-hidden shadow-xl h-fit">
-          <div className="p-4 border-b border-[#222] bg-[#161616]">
-            <h2 className="text-white font-semibold text-sm">
-              Equipe Cadastrada e Saldos
-            </h2>
-          </div>
-          <div className="divide-y divide-[#222] max-h-[700px] overflow-y-auto custom-scrollbar">
-            {carregando ? (
-              <p className="p-10 text-center text-gray-500 font-mono text-sm">
-                Carregando dados...
-              </p>
-            ) : colaboradores.length === 0 ? (
-              <p className="p-10 text-gray-500 text-center text-sm">
-                Nenhum colaborador encontrado.
-              </p>
-            ) : (
-              colaboradores.map((colab) => {
-                const dias = calcularDias(
-                  colab.dias_direito,
-                  colab.dias_gozados,
-                );
-                return (
-                  <div
-                    key={colab.id}
-                    className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-[#161616] transition-colors group"
-                  >
-                    <div className="flex items-center gap-4 flex-1">
-                      <div className="w-10 h-10 rounded-full bg-[#222] flex items-center justify-center text-orange-500 font-bold border border-[#333]">
-                        {colab.colaborador_nome.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="text-white font-medium text-sm truncate">
-                          {colab.colaborador_nome}
-                        </p>
-                        {/* Onde estava {colab.setor}, coloque assim: */}
-                        <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
-                          <Briefcase size={12} className="shrink-0" />
-                          <span className="truncate">
-                            {obterSigla(colab.setor)}
-                          </span>
-                          <span className="text-gray-700 mx-1">•</span>
-                          <Mail size={12} className="shrink-0" />
-                          <span className="truncate">
-                            {colab.email || "Sem e-mail"}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-end gap-5 bg-[#1a1a1a] px-4 py-2 rounded-lg border border-[#222]">
-                      <div className="text-center">
-                        <p className="text-[10px] text-gray-500 uppercase font-bold mb-0.5">
-                          Direito
-                        </p>
-                        <p className="text-sm font-mono text-gray-300">
-                          {dias.direito}
-                        </p>
-                      </div>
-                      <div className="w-px h-6 bg-[#333]"></div>
-                      <div className="text-center">
-                        <p className="text-[10px] text-gray-500 uppercase font-bold mb-0.5">
-                          Gozados
-                        </p>
-                        <p className="text-sm font-mono text-gray-300">
-                          {dias.gozados}
-                        </p>
-                      </div>
-                      <div className="w-px h-6 bg-[#333]"></div>
-                      <div className="text-center">
-                        <p className="text-[10px] text-orange-500 uppercase font-bold mb-0.5">
-                          A Gozar
-                        </p>
-                        <p className="text-base font-bold font-mono text-white leading-none mt-1">
-                          {dias.aGozar}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 w-20 justify-end opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => abrirModalEdicao(colab)}
-                        className="text-gray-500 hover:text-white hover:bg-[#222] rounded p-1.5 transition-all"
-                        title="Editar"
-                      >
-                        <Edit2 size={16} />
-                      </button>
-                      <button
-                        onClick={() => deletarColaborador(colab.id)}
-                        className="text-gray-500 hover:text-red-500 hover:bg-red-950/30 rounded p-1.5 transition-all"
-                        title="Excluir"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* --- MODAL DE EDIÇÃO --- */}
-      {modalEdicaoAberto && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in zoom-in duration-200">
-          <div className="bg-[#111] border border-[#222] rounded-2xl w-full max-w-md shadow-2xl relative p-6">
-            <button
-              onClick={() => setModalEdicaoAberto(false)}
-              className="absolute right-4 top-4 text-gray-500 hover:text-white transition-colors"
-            >
-              <X size={20} />
-            </button>
-
-            <h2 className="text-xl font-bold text-white flex items-center gap-2 mb-6">
-              <Edit2 className="text-orange-500" size={20} /> Editar Colaborador
-            </h2>
-
-            <form onSubmit={salvarEdicao} className="space-y-4">
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">
-                  NOME COMPLETO
-                </label>
-                <input
-                  type="text"
-                  value={editNome}
-                  onChange={(e) => setEditNome(e.target.value)}
-                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-2.5 text-white text-sm focus:border-orange-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">
-                  E-MAIL
-                </label>
-                <input
-                  type="email"
-                  value={editEmail}
-                  onChange={(e) => setEditEmail(e.target.value)}
-                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-2.5 text-white text-sm focus:border-orange-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">
-                  SETOR
-                </label>
-                <select
-                  value={editSetor}
-                  onChange={(e) => setEditSetor(e.target.value)}
-                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-2.5 text-white text-sm focus:border-orange-500 outline-none appearance-none"
-                >
-                  {listaSetores.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 bg-[#161616] p-4 rounded-xl border border-[#222] mt-2">
-                <div>
-                  <label className="text-xs text-gray-500 block mb-1 font-bold">
-                    DIAS DE DIREITO
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={editDiasDireito}
-                    onChange={(e) => setEditDiasDireito(e.target.value)}
-                    className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-2.5 text-white text-sm focus:border-orange-500 outline-none font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-500 block mb-1 font-bold">
-                    DIAS GOZADOS
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={editDiasGozados}
-                    onChange={(e) => setEditDiasGozados(e.target.value)}
-                    className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-2.5 text-white text-sm focus:border-orange-500 outline-none font-mono"
-                  />
-                </div>
-              </div>
-
               <button
                 type="submit"
                 disabled={salvandoEdicao}
-                className="w-full flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-700 text-white font-bold py-3 rounded-lg transition-colors text-sm shadow-lg mt-6"
+                className="w-full bg-orange-600 py-3.5 rounded-lg text-white font-bold mt-4 shadow-lg shadow-orange-900/20 active:scale-95 transition-all uppercase text-xs tracking-widest"
               >
-                <Save size={18} />{" "}
-                {salvandoEdicao ? "SALVANDO..." : "SALVAR ALTERAÇÕES"}
+                Salvar Alterações
               </button>
             </form>
           </div>

@@ -34,39 +34,41 @@ export default function ModalSugestao({
     setCarregando(true);
 
     try {
-      // 1. Busca as regras do setor do colaborador no banco
+      // 1. Normaliza o nome do setor para bater com o banco de dados
+      let setorBusca = solicitacao.setor;
+      if (setorBusca === "Tecnologia da Informação") setorBusca = "TI";
+
+      // 2. Busca as regras usando .maybeSingle() para evitar o erro 406
       const { data: regrasSetor, error } = await supabase
         .from("regras_setor")
         .select("*")
-        .eq("setor", solicitacao.setor)
-        .single();
+        .eq("setor", setorBusca)
+        .maybeSingle();
 
-      if (error && error.code !== "PGRST116") console.error(error); // Ignora erro de "não encontrado"
+      if (error) console.error("Erro ao buscar regras:", error);
 
       setRegras(regrasSetor);
 
-      // 2. O NOSSO ALGORITMO HEURÍSTICO (A "IA")
       // Simulamos um tempo de pensamento para UX (1.5 segundos)
       await new Promise((resolve) => setTimeout(resolve, 1500));
 
       // Lógica de agendamento inteligente:
       let dataInicio = new Date();
       dataInicio.setMonth(dataInicio.getMonth() + 1); // Joga para o mês que vem
-      dataInicio.setDate(15); // Tenta agendar para o meio do mês, que geralmente é mais tranquilo
+      dataInicio.setDate(15);
 
-      // Se o setor tem dias críticos (ex: não pode do dia 1 ao 10), o algoritmo desvia!
+      // Se achou regras e o setor tem dias críticos, o algoritmo desvia!
       if (regrasSetor && regrasSetor.dias_criticos_fim) {
         if (
           dataInicio.getDate() >= regrasSetor.dias_criticos_inicio &&
           dataInicio.getDate() <= regrasSetor.dias_criticos_fim
         ) {
-          // Empurra a data para 2 dias depois do fechamento crítico
           dataInicio.setDate(regrasSetor.dias_criticos_fim + 2);
         }
       }
 
-      // Calcula a data de fim baseada no total de dias que a pessoa pediu
-      const qtdDias = solicitacao.total_dias || 15; // Se não tiver dias, assume 15
+      // Calcula a data de fim baseada no total de dias
+      const qtdDias = solicitacao.total_dias || 15;
       let dataFim = new Date(dataInicio);
       dataFim.setDate(dataInicio.getDate() + (qtdDias - 1));
 

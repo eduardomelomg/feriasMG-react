@@ -1,226 +1,298 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import {
-  Brain,
-  Check,
+  Sparkles,
   X,
-  Calendar,
   AlertTriangle,
-  Loader2,
+  CheckCircle2,
+  Calendar,
+  Search,
+  Info,
 } from "lucide-react";
+import {
+  addDays,
+  format,
+  isWithinInterval,
+  parseISO,
+  isWeekend,
+  eachDayOfInterval,
+  startOfDay,
+} from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 export default function ModalSugestao({
-  isOpen,
-  onClose,
-  solicitacao,
-  onAccept,
+  aberto,
+  fechar,
+  aoSugerir,
+  colaborador,
+  dataBase,
+  diasBase,
 }) {
-  const [carregando, setCarregando] = useState(true);
-  const [sugestao, setSugestao] = useState(null);
-  const [regras, setRegras] = useState(null);
-  const [salvando, setSalvando] = useState(false);
+  const [dataInicio, setDataInicio] = useState("");
+  const [dias, setDias] = useState(15);
+  const [resultado, setResultado] = useState(null);
+  const [carregando, setCarregando] = useState(false);
 
   useEffect(() => {
-    if (isOpen && solicitacao) {
-      calcularMelhorData();
-    } else {
-      // Reseta o estado quando fecha
-      setSugestao(null);
-      setCarregando(true);
+    if (aberto) {
+      setDataInicio(dataBase || "");
+      setDias(diasBase || 15);
+      setResultado(null);
     }
-  }, [isOpen, solicitacao]);
+  }, [aberto, dataBase, diasBase]);
 
-  async function calcularMelhorData() {
+  const analisarIA = async () => {
+    if (!dataInicio || !colaborador)
+      return alert("Selecione uma data para análise!");
+
     setCarregando(true);
-
     try {
-      // 1. Normaliza o nome do setor para bater com o banco de dados
-      let setorBusca = solicitacao.setor;
-      if (setorBusca === "Tecnologia da Informação") setorBusca = "TI";
+      const hojeStr = format(new Date(), "yyyy-MM-dd");
 
-      // 2. Busca as regras usando .maybeSingle() para evitar o erro 406
-      const { data: regrasSetor, error } = await supabase
-        .from("regras_setor")
-        .select("*")
-        .eq("setor", setorBusca)
-        .maybeSingle();
+      const [
+        { data: regras },
+        { data: feriados },
+        { data: ocupacao },
+        { data: equipe },
+      ] = await Promise.all([
+        supabase
+          .from("regras_setor")
+          .select("*")
+          .eq("setor", colaborador.setor)
+          .single(),
+        supabase.from("feriados_coletivas").select("*"),
+        // Buscamos as solicitações do setor
+        supabase
+          .from("solicitacoes")
+          .select("id, data_inicio, data_fim, status")
+          .eq("setor", colaborador.setor)
+          .in("status", ["aprovado", "pendente"])
+          .gte("data_fim", hojeStr),
+        // Buscamos o total REAL de pessoas no setor
+        supabase
+          .from("colaboradores")
+          .select("id")
+          .eq("setor", colaborador.setor),
+      ]);
 
-      if (error) console.error("Erro ao buscar regras:", error);
+      // CORREÇÃO 1: Garante que o total da equipe nunca seja zero para não dividir por zero
+      const totalEquipe = equipe?.length || 1;
+      const limitePercentual =
+        Number(regras?.limite_ausencia_percentual) || 100;
+      const coberturaMinima = Number(regras?.cobertura_minima) || 0;
 
-      setRegras(regrasSetor);
+      const validar = (inicio) => {
+        const fim = addDays(inicio, parseInt(dias) - 1);
+        const intervaloTeste = {
+          start: startOfDay(inicio),
+          end: startOfDay(fim),
+        };
 
-      // Simulamos um tempo de pensamento para UX (1.5 segundos)
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+        if (isWeekend(inicio))
+          return "O início não pode ser em fins de semana.";
 
-      // Lógica de agendamento inteligente:
-      let dataInicio = new Date();
-      dataInicio.setMonth(dataInicio.getMonth() + 1); // Joga para o mês que vem
-      dataInicio.setDate(15);
-
-      // Se achou regras e o setor tem dias críticos, o algoritmo desvia!
-      if (regrasSetor && regrasSetor.dias_criticos_fim) {
+        const diaInicioMes = inicio.getDate();
         if (
-          dataInicio.getDate() >= regrasSetor.dias_criticos_inicio &&
-          dataInicio.getDate() <= regrasSetor.dias_criticos_fim
+          regras?.dias_criticos_inicio &&
+          diaInicioMes >= regras.dias_criticos_inicio &&
+          diaInicioMes <= regras.dias_criticos_fim
         ) {
-          dataInicio.setDate(regrasSetor.dias_criticos_fim + 2);
+          return `Período crítico (Dia ${regras.dias_criticos_inicio} ao ${regras.dias_criticos_fim}).`;
         }
+
+        const temFeriado = feriados?.some((f) => {
+          const fStart = startOfDay(parseISO(f.data_inicio));
+          const fEnd = startOfDay(parseISO(f.data_fim));
+          return (
+            isWithinInterval(startOfDay(inicio), {
+              start: fStart,
+              end: fEnd,
+            }) ||
+            isWithinInterval(startOfDay(fim), { start: fStart, end: fEnd })
+          );
+        });
+        if (temFeriado) return "Bloqueio por Feriado ou Coletivas.";
+
+        const diasDoIntervalo = eachDayOfInterval(intervaloTeste);
+        let maxAusentesSimultaneos = 0;
+
+        diasDoIntervalo.forEach((dia) => {
+          // CORREÇÃO 2: Filtramos a solicitação atual (pelo ID) para não contar o Eduardo duas vezes
+          const ausentesNoDia =
+            ocupacao?.filter((s) => {
+              if (s.id === colaborador.id) return false; // IGNORA O PRÓPRIO EDUARDO DA CONTA
+
+              const sStart = startOfDay(parseISO(s.data_inicio));
+              const sEnd = startOfDay(parseISO(s.data_fim));
+              return isWithinInterval(dia, { start: sStart, end: sEnd });
+            }).length || 0;
+
+          if (ausentesNoDia > maxAusentesSimultaneos)
+            maxAusentesSimultaneos = ausentesNoDia;
+        });
+
+        // Agora somamos o Eduardo (o +1) à contagem dos OUTROS que já estão fora
+        const totalSimulado = maxAusentesSimultaneos + 1;
+        const percAtual = (totalSimulado / totalEquipe) * 100;
+        const disponiveisRestantes = totalEquipe - totalSimulado;
+
+        if (percAtual > limitePercentual) {
+          return `Limite excedido: ${percAtual.toFixed(0)}% do setor estaria ausente (Máx: ${limitePercentual}%).`;
+        }
+        if (disponiveisRestantes < coberturaMinima) {
+          return `Cobertura insuficiente: Restariam ${disponiveisRestantes} pessoas (Mín: ${coberturaMinima}).`;
+        }
+
+        return null;
+      };
+
+      // Inicia a análise
+      const erroEncontrado = validar(parseISO(dataInicio));
+
+      if (!erroEncontrado) {
+        setResultado({
+          status: "ok",
+          mensagem:
+            "Tudo certo! Este período respeita as regras de cobertura do setor.",
+        });
+      } else {
+        // Busca automática por uma data próxima
+        let sugestaoData = parseISO(dataInicio);
+        let encontrouValida = false;
+        for (let i = 1; i < 120; i++) {
+          sugestaoData = addDays(sugestaoData, 1);
+          if (!validar(sugestaoData)) {
+            encontrouValida = true;
+            break;
+          }
+        }
+        setResultado({
+          status: "erro",
+          mensagem: erroEncontrado,
+          sugestao: encontrouValida ? sugestaoData : null,
+        });
       }
-
-      // Calcula a data de fim baseada no total de dias
-      const qtdDias = solicitacao.total_dias || 15;
-      let dataFim = new Date(dataInicio);
-      dataFim.setDate(dataInicio.getDate() + (qtdDias - 1));
-
-      setSugestao({
-        inicio: dataInicio.toISOString().split("T")[0],
-        fim: dataFim.toISOString().split("T")[0],
-        dias: qtdDias,
-      });
     } catch (err) {
-      console.error("Erro na heurística:", err);
+      console.error(err);
     } finally {
       setCarregando(false);
     }
-  }
+  };
 
-  async function aceitarSugestao() {
-    try {
-      setSalvando(true);
-
-      // Atualiza o banco com as datas sugeridas pela IA
-      const { error } = await supabase
-        .from("solicitacoes")
-        .update({
-          data_inicio: sugestao.inicio,
-          data_fim: sugestao.fim,
-          total_dias: sugestao.dias,
-          status: "pendente", // Volta pra pendente para o gestor aprovar oficialmente se quiser
-        })
-        .eq("id", solicitacao.id);
-
-      if (error) throw error;
-
-      alert("Sugestão aplicada com sucesso!");
-      onAccept(); // Atualiza a lista na tela principal
-      onClose(); // Fecha o modal
-    } catch (err) {
-      alert("Erro ao salvar sugestão: " + err.message);
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  if (!isOpen) return null;
+  if (!aberto) return null;
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in zoom-in duration-200">
-      <div className="bg-[#111] border border-[#222] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
-        {/* Header do Modal */}
-        <div className="bg-[#161616] border-b border-[#222] p-5 flex justify-between items-center">
-          <div className="flex items-center gap-2 text-white font-bold">
-            <Brain className="text-orange-500" size={20} />
-            Análise Inteligente
-          </div>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-white transition-colors"
-          >
-            <X size={20} />
-          </button>
+    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+      <div className="bg-[#111] border border-[#222] rounded-3xl w-full max-w-sm shadow-2xl p-6 relative animate-in zoom-in duration-200">
+        <button
+          onClick={fechar}
+          className="absolute right-5 top-5 text-gray-500 hover:text-white transition-colors"
+        >
+          <X size={20} />
+        </button>
+
+        <div className="flex items-center gap-3 mb-6 text-orange-500">
+          <Sparkles size={24} />
+          <h2 className="text-xl font-bold text-white">
+            Análise de Viabilidade
+          </h2>
         </div>
 
-        <div className="p-6">
-          {carregando ? (
-            <div className="flex flex-col items-center justify-center py-10">
-              <Loader2
-                className="text-orange-500 animate-spin mb-4"
-                size={40}
+        <div className="space-y-4">
+          <div className="bg-[#161616] p-4 rounded-2xl border border-[#222]">
+            <label className="text-[10px] text-gray-500 font-bold uppercase block mb-2 text-center">
+              Data Pretendida
+            </label>
+            <div className="flex items-center gap-4">
+              <input
+                type="date"
+                value={dataInicio}
+                onChange={(e) => {
+                  setDataInicio(e.target.value);
+                  setResultado(null);
+                }}
+                className="bg-transparent text-white font-bold outline-none [color-scheme:dark] flex-1"
               />
-              <p className="text-white font-medium">
-                Cruzando regras do setor...
-              </p>
-              <p className="text-gray-500 text-xs mt-1">
-                Verificando coberturas e períodos críticos.
-              </p>
+              <div className="w-px h-6 bg-[#333]"></div>
+              <span className="text-orange-500 font-bold">{dias} dias</span>
             </div>
-          ) : (
-            <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-300">
-              {/* O que a IA descobriu */}
-              <div className="bg-[#1a1a1a] border border-[#333] p-4 rounded-xl">
-                <p className="text-sm text-gray-400 mb-3">
-                  Baseado nas regras do setor de{" "}
-                  <strong className="text-white">{solicitacao.setor}</strong>, a
-                  melhor janela disponível para{" "}
-                  <strong className="text-white">
-                    {solicitacao.colaborador_nome}
-                  </strong>{" "}
-                  é:
-                </p>
+          </div>
 
-                <div className="flex items-center justify-center gap-4 bg-[#222] py-3 rounded-lg border border-[#333]">
-                  <Calendar size={18} className="text-orange-500" />
-                  <span className="text-white font-bold tracking-wide">
-                    {new Date(sugestao?.inicio).toLocaleDateString()} a{" "}
-                    {new Date(sugestao?.fim).toLocaleDateString()}
-                  </span>
+          <button
+            onClick={analisarIA}
+            disabled={carregando || !dataInicio}
+            className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white font-black rounded-2xl transition-all disabled:opacity-30"
+          >
+            {carregando ? "IA CALCULANDO..." : "ANALISAR AGORA"}
+          </button>
+
+          {resultado && (
+            <div
+              className={`p-5 rounded-2xl border animate-in slide-in-from-bottom-2 duration-300 ${resultado.status === "ok" ? "bg-green-500/5 border-green-500/20" : "bg-red-500/5 border-red-500/20"}`}
+            >
+              <div className="flex gap-3">
+                {resultado.status === "ok" ? (
+                  <CheckCircle2 className="text-green-500 shrink-0" size={20} />
+                ) : (
+                  <AlertTriangle className="text-red-500 shrink-0" size={20} />
+                )}
+                <div>
+                  <p
+                    className={`text-sm font-bold ${resultado.status === "ok" ? "text-green-400" : "text-red-400"}`}
+                  >
+                    {resultado.status === "ok"
+                      ? "Período Aprovado!"
+                      : "Atenção necessária"}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+                    {resultado.mensagem}
+                  </p>
                 </div>
               </div>
 
-              {/* Justificativa das Regras */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-gray-500 uppercase">
-                  Motivos da Escolha:
-                </h4>
-                <ul className="text-sm text-gray-400 space-y-2">
-                  <li className="flex items-start gap-2">
-                    <Check
-                      size={16}
-                      className="text-green-500 shrink-0 mt-0.5"
-                    />
-                    Mantém a cobertura mínima exigida{" "}
-                    {regras
-                      ? `(${regras.cobertura_minima} pessoa(s))`
-                      : "do setor"}
-                    .
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <Check
-                      size={16}
-                      className="text-green-500 shrink-0 mt-0.5"
-                    />
-                    Evita conflito com limites de ausência.
-                  </li>
-                  {regras && regras.dias_criticos_inicio && (
-                    <li className="flex items-start gap-2">
-                      <Check
-                        size={16}
-                        className="text-green-500 shrink-0 mt-0.5"
-                      />
-                      Não choca com o período de fechamento (dias{" "}
-                      {regras.dias_criticos_inicio} a {regras.dias_criticos_fim}
-                      ).
-                    </li>
-                  )}
-                </ul>
-              </div>
+              {/* BOTÃO 1: CONFIRMAR DATA ATUAL (Se estiver OK) */}
+              {resultado.status === "ok" && (
+                <button
+                  onClick={() => {
+                    const fimCalculado = format(
+                      addDays(parseISO(dataInicio), parseInt(dias) - 1),
+                      "yyyy-MM-dd",
+                    );
+                    aoSugerir(dataInicio, fimCalculado, dias);
+                  }}
+                  className="w-full mt-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-green-900/20"
+                >
+                  CONFIRMAR ESTA DATA
+                </button>
+              )}
 
-              {/* Ações */}
-              <div className="flex gap-3 pt-4 border-t border-[#222]">
-                <button
-                  onClick={onClose}
-                  className="flex-1 px-4 py-2.5 rounded-lg font-bold text-sm bg-[#222] text-white hover:bg-[#333] transition-colors"
-                >
-                  RECUSAR
-                </button>
-                <button
-                  onClick={aceitarSugestao}
-                  disabled={salvando}
-                  className="flex-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-orange-600 hover:bg-orange-700 disabled:bg-gray-700 disabled:text-gray-400 text-white transition-colors shadow-lg shadow-orange-900/20 flex items-center justify-center gap-2"
-                >
-                  {salvando ? "APLICANDO..." : "ACEITAR SUGESTÃO"}
-                </button>
-              </div>
+              {/* BOTÃO 2: USAR SUGESTÃO DA IA (Se a original der erro) */}
+              {resultado.sugestao && (
+                <div className="mt-5 pt-4 border-t border-[#333]">
+                  <p className="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-3">
+                    Sugestão da IA:
+                  </p>
+                  <button
+                    onClick={() => {
+                      const dataSugeridaStr = format(
+                        resultado.sugestao,
+                        "yyyy-MM-dd",
+                      );
+                      const fimSugeridoStr = format(
+                        addDays(resultado.sugestao, parseInt(dias) - 1),
+                        "yyyy-MM-dd",
+                      );
+                      aoSugerir(dataSugeridaStr, fimSugeridoStr, dias);
+                    }}
+                    className="w-full py-3 bg-[#1a1a1a] border border-orange-500/40 text-orange-500 rounded-xl text-xs font-bold hover:bg-orange-500 hover:text-white transition-all flex items-center justify-center gap-2"
+                  >
+                    <Calendar size={14} /> Usar a partir de{" "}
+                    {format(resultado.sugestao, "dd 'de' MMMM", {
+                      locale: ptBR,
+                    })}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

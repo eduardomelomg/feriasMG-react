@@ -24,7 +24,7 @@ import Solicitacoes from "./pages/Solicitacoes";
 import Calendario from "./pages/Calendario";
 import Pendencias from "./pages/pendencias";
 import Colaboradores from "./pages/Colaboradores";
-import Usuarios from "./pages/Usuarios";
+import Usuarios from "./pages/GestaoUsuarios";
 import Relatorios from "./pages/Relatorios";
 import Configuracoes from "./pages/configuracoes";
 
@@ -37,22 +37,52 @@ function Sidebar() {
   const menuItems = [
     { name: "Dashboard", path: "/", icon: <LayoutDashboard size={20} /> },
     { name: "Calendário", path: "/calendario", icon: <Calendar size={20} /> },
-    { name: "Solicitações", path: "/solicitacoes", icon: <FileText size={20} /> },
+    {
+      name: "Solicitações",
+      path: "/solicitacoes",
+      icon: <FileText size={20} />,
+    },
     // Colocamos adminOnly nas 3 telas que o Coordenador NÃO pode ver:
-    { name: "Pendências", path: "/pendencias", icon: <AlertTriangle size={20} />, adminOnly: true },
-    { name: "Colaboradores", path: "/colaboradores", icon: <Users size={20} /> },
-    { name: "Usuários", path: "/usuarios", icon: <UserCog size={20} />, adminOnly: true },
-    { name: "Relatórios", path: "/relatorios", icon: <BarChart3 size={20} />, adminOnly: true },
-    { name: "Configurações", path: "/configuracoes", icon: <Settings size={20} /> },
+    {
+      name: "Pendências",
+      path: "/pendencias",
+      icon: <AlertTriangle size={20} />,
+      adminOnly: true,
+    },
+    {
+      name: "Colaboradores",
+      path: "/colaboradores",
+      icon: <Users size={20} />,
+    },
+    {
+      name: "Usuários",
+      path: "/usuarios",
+      icon: <UserCog size={20} />,
+      adminOnly: true,
+    },
+    {
+      name: "Relatórios",
+      path: "/relatorios",
+      icon: <BarChart3 size={20} />,
+      adminOnly: true,
+    },
+    {
+      name: "Configurações",
+      path: "/configuracoes",
+      icon: <Settings size={20} />,
+    },
   ];
 
   // Filtra o menu com base no perfil do usuário
   const menusPermitidos = menuItems.filter((item) => {
     // Admin TI e Gestão DP veem absolutamente tudo
-    if (usuarioLogado.perfil === "Admin TI" || usuarioLogado.perfil === "Gestão DP") {
+    if (
+      usuarioLogado.perfil === "Admin TI" ||
+      usuarioLogado.perfil === "Gestão DP"
+    ) {
       return true;
     }
-    
+
     // Coordenador vê tudo, EXCETO as 3 telas marcadas como adminOnly
     if (usuarioLogado.perfil === "Coordenador") {
       return !item.adminOnly;

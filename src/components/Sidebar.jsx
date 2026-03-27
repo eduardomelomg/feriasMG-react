@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { useAuth } from "./contexts/AuthContext"; // Ajuste o caminho se necessário
+import { useAuth } from "../contexts/AuthContext"; // Ajuste o caminho se necessário
 import { supabase } from "./lib/supabase"; // Ajuste o caminho se necessário
 import {
   LayoutDashboard,

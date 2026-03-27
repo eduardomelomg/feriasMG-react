@@ -82,18 +82,15 @@ export default function Sidebar() {
   // Filtra o menu com base no perfil (Removido 'Admin TI')
   // Filtra o menu com base no perfil (Focado em ADMINISTRADOR (TI))
   const menusPermitidos = menuItems.filter((item) => {
-    // Se o perfil não estiver carregado, não mostra nada
     if (!usuarioLogado?.perfil) return false;
 
-    // Padroniza para maiúsculo e remove espaços extras (segurança extra)
     const p = usuarioLogado.perfil.toUpperCase().trim();
 
-    // Administradores e Gestão DP têm acesso total
+    // Agora comparando exatamente com o que aparece no seu print
     if (p === "ADMINISTRADOR (TI)" || p === "GESTÃO DP") {
       return true;
     }
 
-    // Coordenadores vêem apenas o que não for restrito a administradores
     if (p === "COORDENADOR") {
       return !item.adminOnly;
     }

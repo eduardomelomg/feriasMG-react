@@ -51,6 +51,7 @@ export default function Sidebar() {
     };
   }, []);
 
+  
   const menuItems = [
     { name: "Dashboard", path: "/", icon: <LayoutDashboard size={20} /> },
     { name: "Calendário", path: "/calendario", icon: <Calendar size={20} /> },

@@ -1,124 +1,83 @@
-alert("SIDEBAR CARREGADO COM SUCESSO!");
-
-import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabase";
-import {
-  LayoutDashboard,
-  ClipboardList,
-  Users,
-  Settings,
-  LogOut,
-} from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext"; // Verifique se o caminho está correto
+import { 
+  LayoutDashboard, 
+  Calendar, 
+  FileText, 
+  Users, 
+  UserCog, 
+  Settings, 
+  LogOut 
+} from "lucide-react";
+import { supabase } from "../lib/supabase"; // Verifique se o caminho está correto
 
 export default function Sidebar() {
-  const [contagem, setContagem] = useState(0);
   const location = useLocation();
-
-  useEffect(() => {
-    console.log("1. Sidebar montado e useEffect iniciado");
-
-    const atualizarContagem = async () => {
-      try {
-        console.log("2. Tentando buscar contagem no Supabase...");
-
-        // CORREÇÃO AQUI: Adicionado 'error' dentro das chaves
-        const { count, error } = await supabase
-          .from("solicitacoes")
-          .select("*", { count: "exact", head: true })
-          .eq("status", "pendente");
-
-        if (error) {
-          console.error("3. Erro retornado pelo Supabase:", error.message);
-          return;
-        }
-
-        console.log("4. Contagem recebida com sucesso:", count);
-        setContagem(count || 0);
-      } catch (err) {
-        console.error("3b. Erro crítico na função atualizarContagem:", err);
-      }
-    };
-
-    atualizarContagem();
-
-    const canal = supabase
-      .channel("sidebar-changes")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "solicitacoes" },
-        (payload) => {
-          console.log("5. Mudança detectada via Realtime!", payload);
-          atualizarContagem();
-        },
-      )
-      .subscribe();
-
-    return () => {
-      console.log("Limpando canal de Realtime");
-      supabase.removeChannel(canal);
-    };
-  }, []);
+  const { usuarioLogado } = useAuth();
 
   const menuItems = [
-    {
-      name: "Dashboard",
-      icon: <LayoutDashboard size={20} />,
-      path: "/dashboard",
-    },
-    {
-      name: "Pendências",
-      icon: <ClipboardList size={20} />,
-      path: "/pendencias",
-      badge: true,
-    },
-    {
-      name: "Colaboradores",
-      icon: <Users size={20} />,
-      path: "/colaboradores",
-    },
-    { name: "Ajustes", icon: <Settings size={20} />, path: "/configuracoes" },
+    { name: "Dashboard", path: "/", icon: <LayoutDashboard size={20} /> },
+    { name: "Calendário", path: "/calendario", icon: <Calendar size={20} /> },
+    { name: "Solicitações", path: "/solicitacoes", icon: <FileText size={20} /> },
+    { name: "Colaboradores", path: "/colaboradores", icon: <Users size={20} /> },
+    { name: "Usuários", path: "/usuarios", icon: <UserCog size={20} />, adminOnly: true },
+    { name: "Configurações", path: "/configuracoes", icon: <Settings size={20} /> },
   ];
 
+  // Filtra o menu com base no perfil (Já com a correção do nome!)
+  const menusPermitidos = menuItems.filter((item) => {
+    const p = usuarioLogado?.perfil;
+    if (p === "Admin TI" || p === "ADMINISTRADOR (TI)" || p === "Gestão DP") return true;
+    if (p === "Coordenador") return !item.adminOnly;
+    return false;
+  });
+
+  const fazerLogout = async () => {
+    await supabase.auth.signOut();
+  };
+
   return (
-    <aside className="w-64 bg-[#0a0a0a] border-r border-[#1a1a1a] flex flex-col h-screen sticky top-0">
-      <div className="p-6">
-        <h1 className="text-orange-500 font-black text-xl tracking-tighter italic">
-          MENDONÇA GALVÃO
-        </h1>
+    <div className="w-64 h-screen bg-[#111111] text-gray-400 flex flex-col border-r border-[#222]">
+      {/* ... (Todo o restante do JSX que estava no App.jsx, do logo ao rodapé) ... */}
+      <div className="p-6 flex items-center gap-3">
+         <div className="w-8 h-8 bg-gray-800 rounded flex items-center justify-center text-orange-400 font-bold">MG</div>
+         <div>
+            <h1 className="text-white font-semibold text-sm">Mendonça Galvão</h1>
+            <p className="text-[10px] text-gray-500 tracking-wider">CONTROLO DE FÉRIAS</p>
+         </div>
       </div>
 
-      <nav className="flex-1 px-4 space-y-2">
-        {menuItems.map((item) => (
-          <Link
-            key={item.path}
-            to={item.path}
-            className={`flex items-center justify-between p-3 rounded-lg transition-colors group ${
-              location.pathname === item.path
-                ? "bg-orange-500/10 text-orange-500"
-                : "text-gray-500 hover:bg-[#111] hover:text-white"
-            }`}
-          >
-            <div className="flex items-center gap-3">
+      <nav className="flex-1 px-4 space-y-1 mt-4">
+        {menusPermitidos.map((item) => {
+          const isActive = location.pathname === item.path;
+          return (
+            <Link key={item.name} to={item.path} className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${isActive ? "bg-orange-500/10 text-orange-400 font-medium" : "hover:bg-[#1a1a1a] hover:text-white"}`}>
               {item.icon}
-              <span className="font-medium text-sm">{item.name}</span>
-            </div>
-
-            {/* O Badge que pisca quando tem pendência */}
-            {item.badge && contagem > 0 && (
-              <span className="bg-orange-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full animate-pulse">
-                {contagem}
-              </span>
-            )}
-          </Link>
-        ))}
+              <span className="text-sm">{item.name}</span>
+            </Link>
+          );
+        })}
       </nav>
 
-      <div className="p-4 border-t border-[#1a1a1a]">
-        <button className="flex items-center gap-3 p-3 w-full text-gray-500 hover:text-red-500 transition-colors text-sm font-medium">
-          <LogOut size={18} /> Sair do Sistema
-        </button>
-      </div>
-    </aside>
+      {usuarioLogado && (
+        <div className="p-4 border-t border-[#222]">
+          {/* ... Rodapé com nome e email ... */}
+          <div className="flex items-center justify-between px-2">
+             <div className="flex items-center gap-2 truncate">
+                <div className="w-8 h-8 bg-green-900/40 text-green-500 rounded-full flex items-center justify-center text-sm font-bold border border-green-900 shrink-0">
+                   {usuarioLogado.iniciais || "MG"}
+                </div>
+                <div className="overflow-hidden">
+                   <p className="text-sm text-white truncate font-bold">{usuarioLogado.nome}</p>
+                   <p className="text-[10px] text-gray-500 truncate">{usuarioLogado.email}</p>
+                </div>
+             </div>
+             <button onClick={fazerLogout} className="text-gray-500 hover:text-red-500 p-2 rounded-lg">
+                <LogOut size={16} />
+             </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

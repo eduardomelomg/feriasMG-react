@@ -12,8 +12,7 @@ export default function Login() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          // FORÇAMOS o redirecionamento para o seu computador
-          redirectTo: "http://localhost:5173",
+          redirectTo: window.location.origin,
           queryParams: {
             hd: "mendoncagalvao.com.br",
             prompt: "select_account",

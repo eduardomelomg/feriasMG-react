@@ -51,7 +51,6 @@ export default function Sidebar() {
     };
   }, []);
 
-  
   const menuItems = [
     { name: "Dashboard", path: "/", icon: <LayoutDashboard size={20} /> },
     { name: "Calendário", path: "/calendario", icon: <Calendar size={20} /> },
@@ -80,16 +79,25 @@ export default function Sidebar() {
   ];
 
   // Filtra o menu com base no perfil (Correção para ADMINISTRADOR (TI))
+  // Filtra o menu com base no perfil (Removido 'Admin TI')
+  // Filtra o menu com base no perfil (Focado em ADMINISTRADOR (TI))
   const menusPermitidos = menuItems.filter((item) => {
-    const p = usuarioLogado?.perfil;
-    // Admins e RH vêem tudo
-    if (p === "Admin TI" || p === "ADMINISTRADOR (TI)" || p === "Gestão DP") {
+    // Se o perfil não estiver carregado, não mostra nada
+    if (!usuarioLogado?.perfil) return false;
+
+    // Padroniza para maiúsculo e remove espaços extras (segurança extra)
+    const p = usuarioLogado.perfil.toUpperCase().trim();
+
+    // Administradores e Gestão DP têm acesso total
+    if (p === "ADMINISTRADOR (TI)" || p === "GESTÃO DP") {
       return true;
     }
-    // Coordenadores não vêem itens de Admin
-    if (p === "Coordenador") {
+
+    // Coordenadores vêem apenas o que não for restrito a administradores
+    if (p === "COORDENADOR") {
       return !item.adminOnly;
     }
+
     return false;
   });
 

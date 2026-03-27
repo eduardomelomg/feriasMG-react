@@ -27,8 +27,8 @@ import Solicitacoes from "./pages/Solicitacoes";
 import Calendario from "./pages/Calendario";
 import Colaboradores from "./pages/Colaboradores";
 import Usuarios from "./pages/GestaoUsuarios";
-import Configuracoes from "./pages/configuracoes";
-import Login from "./pages/login";
+import Configuracoes from "./pages/Configuracoes.jsx";
+import Login from "./pages/TelaLogin.jsx";
 
 // Componente da Barra Lateral (Sidebar)
 function Sidebar() {

@@ -7,7 +7,7 @@ import {
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 
 // Importe o novo componente Sidebar do arquivo separado
-import Sidebar from "./sidebar";
+import Sidebar from "./components/Sidebar.jsx";
 
 // Importe as Páginas
 import Dashboard from "./pages/Dashboard";

@@ -43,7 +43,7 @@ export default function Sidebar() {
          <div className="w-8 h-8 bg-gray-800 rounded flex items-center justify-center text-orange-400 font-bold">MG</div>
          <div>
             <h1 className="text-white font-semibold text-sm">Mendonça Galvão</h1>
-            <p className="text-[10px] text-gray-500 tracking-wider">CONTROLO DE FÉRIAS</p>
+            <p className="text-[10px] text-gray-500 tracking-wider">GESTÃO DE FÉRIAS</p>
          </div>
       </div>
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext"; // Ajuste o caminho se necessário
-import { supabase } from "../lib/supabase"; // Ajuste o caminho se necessário
+import { useAuth } from "../contexts/AuthContext";
+import { supabase } from "../lib/supabase";
 import {
   LayoutDashboard,
   Calendar,
@@ -12,12 +12,14 @@ import {
   LogOut,
 } from "lucide-react";
 
+// 1. Importe sua logo aqui (ajuste o nome do arquivo se for .svg, .png ou .jpg)
+import logoMarca from "../assets/logo.png";
+
 export default function Sidebar() {
   const [contagem, setContagem] = useState(0);
   const location = useLocation();
   const { usuarioLogado } = useAuth();
 
-  // Busca contagem de pendências (Exemplo de funcionalidade que você tinha)
   useEffect(() => {
     const atualizarContagem = async () => {
       try {
@@ -34,15 +36,12 @@ export default function Sidebar() {
 
     atualizarContagem();
 
-    // Realtime para atualizar o badge automaticamente
     const canal = supabase
       .channel("sidebar-changes")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "solicitacoes" },
-        () => {
-          atualizarContagem();
-        },
+        () => atualizarContagem(),
       )
       .subscribe();
 
@@ -78,23 +77,11 @@ export default function Sidebar() {
     },
   ];
 
-  // Filtra o menu com base no perfil (Correção para ADMINISTRADOR (TI))
-  // Filtra o menu com base no perfil (Removido 'Admin TI')
-  // Filtra o menu com base no perfil (Focado em ADMINISTRADOR (TI))
   const menusPermitidos = menuItems.filter((item) => {
     if (!usuarioLogado?.perfil) return false;
-
     const p = usuarioLogado.perfil.toUpperCase().trim();
-
-    // Agora comparando exatamente com o que aparece no seu print
-    if (p === "ADMINISTRADOR (TI)" || p === "GESTÃO DP") {
-      return true;
-    }
-
-    if (p === "COORDENADOR") {
-      return !item.adminOnly;
-    }
-
+    if (p === "ADMINISTRADOR (TI)" || p === "GESTÃO DP") return true;
+    if (p === "COORDENADOR") return !item.adminOnly;
     return false;
   });
 
@@ -104,11 +91,17 @@ export default function Sidebar() {
 
   return (
     <aside className="w-64 h-screen bg-[#111111] text-gray-400 flex flex-col border-r border-[#222] sticky top-0">
-      {/* TOPO: LOGO E NOME DO SISTEMA */}
+      {/* TOPO COM LOGOMARCA OFICIAL */}
       <div className="p-6 flex items-center gap-3">
-        <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-700 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-orange-500/20 shrink-0">
-          MG
-        </div>
+        <img
+          src={logoMarca}
+          alt="Mendonça Galvão"
+          className="w-10 h-10 object-contain rounded-lg"
+          // Caso a logo não carregue, ele mantém o estilo do container
+          onError={(e) => {
+            e.target.style.display = "none";
+          }}
+        />
         <div className="overflow-hidden">
           <h1 className="text-white font-bold text-sm tracking-tight leading-tight uppercase">
             Mendonça Galvão
@@ -119,7 +112,6 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* NAVEGAÇÃO */}
       <nav className="flex-1 px-4 space-y-1 mt-4">
         {menusPermitidos.map((item) => {
           const isActive = location.pathname === item.path;
@@ -144,7 +136,6 @@ export default function Sidebar() {
               </span>
               <span className="text-sm">{item.name}</span>
 
-              {/* Badge de Pendências */}
               {item.badge && contagem > 0 && (
                 <span className="ml-auto bg-orange-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full animate-pulse">
                   {contagem}
@@ -159,40 +150,37 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* RODAPÉ: PERFIL E LOGOUT */}
-      {usuarioLogado && (
-        <div className="p-4 border-t border-[#222]">
-          <div className="bg-[#1a1a1a] p-2 rounded border border-orange-900/30 flex items-center gap-2 mb-4">
-            <div className="w-2 h-2 rounded-full bg-orange-500"></div>
-            <span className="text-orange-400 text-[10px] font-bold uppercase tracking-tighter truncate">
-              {usuarioLogado.perfil}
-            </span>
-          </div>
-
-          <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-2 truncate">
-              <div className="w-8 h-8 bg-orange-900/20 text-orange-500 rounded-full flex items-center justify-center text-xs font-bold border border-orange-900/30 shrink-0">
-                {usuarioLogado.iniciais || "MG"}
-              </div>
-              <div className="overflow-hidden">
-                <p className="text-xs text-white truncate font-bold">
-                  {usuarioLogado.nome || "Usuário"}
-                </p>
-                <p className="text-[10px] text-gray-600 truncate">
-                  {usuarioLogado.email}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={fazerLogout}
-              className="text-gray-600 hover:text-red-500 transition-colors p-1.5 hover:bg-red-500/10 rounded-md"
-              title="Sair"
-            >
-              <LogOut size={16} />
-            </button>
-          </div>
+      <div className="p-4 border-t border-[#222]">
+        <div className="bg-[#1a1a1a] p-2 rounded border border-orange-900/30 flex items-center gap-2 mb-4">
+          <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+          <span className="text-orange-400 text-[10px] font-bold uppercase tracking-tighter truncate">
+            {usuarioLogado?.perfil}
+          </span>
         </div>
-      )}
+
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2 truncate">
+            <div className="w-8 h-8 bg-orange-900/20 text-orange-500 rounded-full flex items-center justify-center text-xs font-bold border border-orange-900/30 shrink-0">
+              {usuarioLogado?.iniciais || "MG"}
+            </div>
+            <div className="overflow-hidden">
+              <p className="text-xs text-white truncate font-bold">
+                {usuarioLogado?.nome || "Usuário"}
+              </p>
+              <p className="text-[10px] text-gray-600 truncate">
+                {usuarioLogado?.email}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={fazerLogout}
+            className="text-gray-600 hover:text-red-500 transition-colors p-1.5 hover:bg-red-500/10 rounded-md"
+            title="Sair"
+          >
+            <LogOut size={16} />
+          </button>
+        </div>
+      </div>
     </aside>
   );
 }

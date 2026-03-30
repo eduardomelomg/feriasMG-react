@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { useAuth } from "../contexts/AuthContext"; // Importando o seu contexto de autenticação
+import { useAuth } from "../contexts/AuthContext";
 import {
   CheckCircle,
   XCircle,
@@ -19,7 +19,7 @@ import { format, parseISO, differenceInDays, addDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 export default function Solicitacoes() {
-  const { usuarioLogado } = useAuth(); // Pegando os dados do usuário que está usando o sistema
+  const { usuarioLogado } = useAuth();
   const [pendentes, setPendentes] = useState([]);
   const [historico, setHistorico] = useState([]);
   const [colaboradores, setColaboradores] = useState([]);

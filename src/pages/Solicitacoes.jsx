@@ -47,13 +47,17 @@ export default function Solicitacoes() {
   // --- 1. FUNÇÃO DE ENVIO DE E-MAIL ---
   // --- FUNÇÃO DE ENVIO DE E-MAIL ESTILIZADO ---
   const enviarEmailNotificacao = (sol, novoStatus, obs) => {
-    // 1. Verificação de segurança: se não tiver e-mail ou datas, ele não trava o sistema
+    // 1. Verificação de segurança: evita o erro se os dados estiverem nulos
 
     const emailDestino = sol.colaboradores?.email;
 
-    if (!emailDestino || !sol.data_inicio || !sol.data_fim) {
+    const dataIni = sol.data_inicio;
+
+    const dataFim = sol.data_fim;
+
+    if (!emailDestino || !dataIni || !dataFim) {
       console.warn(
-        "Dados insuficientes para envio de e-mail (E-mail ou Datas ausentes).",
+        "Dados incompletos para envio de e-mail. Pulando notificação.",
       );
 
       return;
@@ -69,15 +73,15 @@ export default function Solicitacoes() {
 
         cor_status: novoStatus === "Aprovada" ? "#22c55e" : "#ef4444",
 
-        data_inicio: format(parseISO(sol.data_inicio), "dd/MM/yyyy"),
+        data_inicio: format(parseISO(dataIni), "dd/MM/yyyy"),
 
-        data_fimm: format(parseISO(sol.data_fim), "dd/MM/yyyy"),
+        data_fimm: format(parseISO(dataFim), "dd/MM/yyyy"),
 
         total_dias: sol.total_dias || 0,
 
         observacao: obs || "Sem observações adicionais.",
 
-        gestor_nome: usuarioLogado?.nome || "Mendonça Galvão",
+        gestor_nome: usuarioLogado?.nome || "Gestão Mendonça Galvão",
 
         ano_atual: new Date().getFullYear(),
       };
@@ -94,9 +98,9 @@ export default function Solicitacoes() {
         )
         .then(() => console.log("E-mail enviado!"))
 
-        .catch((err) => console.error("Erro no EmailJS:", err));
+        .catch((err) => console.error("Erro EmailJS:", err));
     } catch (error) {
-      console.error("Erro ao formatar dados para o e-mail:", error);
+      console.error("Erro ao processar dados do e-mail:", error);
     }
   };
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
+import emailjs from "@emailjs/browser";
 import {
   CheckCircle,
   XCircle,
@@ -10,8 +11,6 @@ import {
   AlertCircle,
   Plus,
   X,
-  User,
-  Save,
   BrainCircuit,
   CalendarDays,
 } from "lucide-react";
@@ -20,6 +19,8 @@ import { ptBR } from "date-fns/locale";
 
 export default function Solicitacoes() {
   const { usuarioLogado } = useAuth();
+
+  // Estados de Dados
   const [pendentes, setPendentes] = useState([]);
   const [historico, setHistorico] = useState([]);
   const [colaboradores, setColaboradores] = useState([]);
@@ -28,13 +29,14 @@ export default function Solicitacoes() {
   const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState("");
 
-  // --- Estados do Modal ---
+  // Estados do Modal de Nova Solicitação
   const [modalNovoAberto, setModalNovoAberto] = useState(false);
   const [novoColabId, setNovoColabId] = useState("");
   const [novaDataInicio, setNovaDataInicio] = useState("");
   const [novaDataFim, setNovaDataFim] = useState("");
   const [salvandoNova, setSalvandoNova] = useState(false);
 
+  // Estados do Modal de Análise
   const [modalAnaliseAberto, setModalAnaliseAberto] = useState(false);
   const [solAtual, setSolAtual] = useState(null);
   const [resultadoAnalise, setResultadoAnalise] = useState({
@@ -42,13 +44,35 @@ export default function Solicitacoes() {
     sugestao: null,
   });
 
-  // --- 1. BUSCA DE DADOS ---
+  // --- 1. FUNÇÃO DE ENVIO DE E-MAIL ---
+  const enviarEmailNotificacao = (sol, novoStatus, obs) => {
+    const emailDestino = sol.colaboradores?.email;
+    if (!emailDestino) return console.warn("E-mail não encontrado.");
+
+    const templateParams = {
+      nome_colaborador: sol.colaboradores?.colaborador_nome,
+      to_email: emailDestino,
+      status: novoStatus.toUpperCase(),
+      data_inicio: format(parseISO(sol.data_inicio), "dd/MM/yyyy"),
+      data_fim: format(parseISO(sol.data_fim), "dd/MM/yyyy"),
+      observacao: obs || "Sem observações adicionais.",
+      gestor: usuarioLogado?.nome || "Administração Mendonça Galvão",
+    };
+
+    // SUBSTITUA PELOS SEUS IDS DO EMAILJS
+    emailjs
+      .send("service_id", "template_id", templateParams, "public_key")
+      .then(() => console.log("Notificação enviada com sucesso!"))
+      .catch((err) => console.error("Erro ao enviar e-mail:", err));
+  };
+
+  // --- 2. BUSCA DE DADOS ---
   async function buscarDados() {
     try {
       setCarregando(true);
       const { data: sols, error: errSols } = await supabase
         .from("solicitacoes")
-        .select(`*, colaboradores (colaborador_nome, setor)`)
+        .select(`*, colaboradores (colaborador_nome, setor, email)`)
         .order("created_at", { ascending: false });
       if (errSols) throw errSols;
 
@@ -57,7 +81,7 @@ export default function Solicitacoes() {
 
       const { data: colabs } = await supabase
         .from("colaboradores")
-        .select("id, colaborador_nome, setor")
+        .select("id, colaborador_nome, setor, email")
         .eq("status", "ativo")
         .order("colaborador_nome");
       setColaboradores(colabs || []);
@@ -85,7 +109,7 @@ export default function Solicitacoes() {
       ? differenceInDays(parseISO(novaDataFim), parseISO(novaDataInicio)) + 1
       : 0;
 
-  // --- 2. ALGORITMO DE ANÁLISE (Omissão de repetição para brevidade, lógica mantida) ---
+  // --- 3. ALGORITMO DE ANÁLISE ---
   const checarConflitos = (inicio, fim, setor) => {
     let conflitos = [];
     const dInicio = parseISO(inicio);
@@ -167,20 +191,19 @@ export default function Solicitacoes() {
     });
   };
 
-  // --- 3. AÇÕES NO BANCO DE DADOS (COM IDENTIFICAÇÃO DE USUÁRIO) ---
+  // --- 4. AÇÕES NO BANCO DE DADOS ---
   const decidirSolicitacao = async (sol, novoStatus, obs = null) => {
     const acaoTexto =
       novoStatus === "Sugerida" ? "enviar sugestão" : novoStatus.toLowerCase();
     if (!confirm(`Deseja ${acaoTexto} para esta solicitação?`)) return;
 
     try {
-      // Usamos o ID do usuário da sessão e o nome dele para o log
       const dadosUpdate = {
         status: novoStatus,
         observacao: obs,
         updated_at: new Date().toISOString(),
-        aprovado_por: usuarioLogado?.nome || "Sistema", // Nome de quem clicou
-        user_id: usuarioLogado?.id || null, // ID de quem clicou para o banco
+        aprovado_por: usuarioLogado?.nome || "Sistema",
+        user_id: usuarioLogado?.id || null,
       };
 
       const { error: errUpdate } = await supabase
@@ -190,18 +213,16 @@ export default function Solicitacoes() {
 
       if (errUpdate) throw errUpdate;
 
+      enviarEmailNotificacao(sol, novoStatus, obs);
+
       if (novoStatus === "Aprovada") {
         await supabase.rpc("abater_saldo_individual", {
           id_colab: sol.colaborador_id,
-          dias: sol.total_dias, // Aqui ele envia quantos dias deve SUBTRAIR
+          dias: sol.total_dias,
         });
       }
 
-      alert(
-        novoStatus === "Sugerida"
-          ? "Sugestão enviada!"
-          : `Solicitação ${novoStatus}!`,
-      );
+      alert(`Sucesso! Colaborador notificado.`);
       setModalAnaliseAberto(false);
       buscarDados();
     } catch (error) {
@@ -230,6 +251,9 @@ export default function Solicitacoes() {
       ]);
       if (error) throw error;
       setModalNovoAberto(false);
+      setNovoColabId("");
+      setNovaDataInicio("");
+      setNovaDataFim("");
       buscarDados();
     } catch (error) {
       alert(error.message);
@@ -245,39 +269,45 @@ export default function Solicitacoes() {
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Clock className="text-orange-500" /> Centro de Operações
           </h1>
-          <p className="text-gray-500 text-sm">
-            Análise e gerenciamento de férias
+          <p className="text-gray-500 text-sm tracking-tight leading-tight uppercase opacity-80">
+            Mendonça Galvão — Gestão de Férias
           </p>
         </div>
+
         <button
           onClick={() => setModalNovoAberto(true)}
-          className="bg-orange-600 hover:bg-orange-700 text-white font-black text-xs uppercase px-6 py-3.5 rounded-xl flex items-center gap-2 transition-all shadow-lg"
+          className="bg-orange-600 hover:bg-orange-700 text-white font-black text-xs uppercase px-6 py-3.5 rounded-xl flex items-center gap-2 transition-all shadow-lg active:scale-95"
         >
           <Plus size={18} /> Nova Solicitação
         </button>
       </header>
 
-      {/* LISTA DE PENDÊNCIAS */}
+      {/* PENDÊNCIAS */}
       <section className="mb-12">
-        <h2 className="text-lg font-bold uppercase tracking-widest mb-6 flex items-center gap-2">
-          <AlertCircle className="text-yellow-500" /> Pendências (
-          {pendentes.length})
-        </h2>
+        <div className="flex items-center gap-2 mb-6">
+          <AlertCircle className="text-yellow-500" size={20} />
+          <h2 className="text-lg font-bold uppercase tracking-widest">
+            Pendências ({pendentes.length})
+          </h2>
+        </div>
+
         {carregando ? (
-          <p className="text-center p-10 text-gray-500">Sincronizando...</p>
+          <p className="text-center p-10 text-gray-500 animate-pulse uppercase text-[10px] font-black">
+            Sincronizando Banco...
+          </p>
         ) : (
           <div className="space-y-2">
             {pendentes.map((sol) => (
               <div
                 key={sol.id}
-                className="bg-[#111] border border-[#222] p-3 pl-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4"
+                className="bg-[#111] border border-[#222] p-3 pl-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 group hover:border-orange-500/30 transition-all"
               >
-                <div className="flex items-center gap-4 flex-1">
-                  <div className="w-10 h-10 rounded-full bg-[#1a1a1a] flex items-center justify-center text-orange-500 font-bold border border-[#333]">
+                <div className="flex items-center gap-4 flex-1 truncate">
+                  <div className="w-10 h-10 rounded-full bg-[#1a1a1a] flex items-center justify-center text-orange-500 font-bold border border-[#333] shrink-0">
                     {sol.colaboradores?.colaborador_nome?.charAt(0)}
                   </div>
-                  <div>
-                    <h3 className="font-bold text-sm uppercase text-white">
+                  <div className="truncate">
+                    <h3 className="font-bold text-sm uppercase text-white truncate">
                       {sol.colaboradores?.colaborador_nome}
                     </h3>
                     <p className="text-[10px] text-gray-500 font-black uppercase tracking-tighter">
@@ -286,7 +316,7 @@ export default function Solicitacoes() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-8 px-4 py-2 bg-[#161616] rounded-xl border border-[#222]">
+                <div className="flex items-center gap-8 px-4 py-2 bg-[#161616] rounded-xl border border-[#222] md:min-w-[300px] justify-between">
                   <div className="flex flex-col">
                     <span className="text-[9px] text-gray-500 font-bold uppercase">
                       Período
@@ -306,7 +336,7 @@ export default function Solicitacoes() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={() => decidirSolicitacao(sol, "Aprovada")}
                     className="h-10 px-4 bg-green-600/10 hover:bg-green-600 text-green-500 hover:text-white rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-1.5 border border-green-600/20"
@@ -332,9 +362,9 @@ export default function Solicitacoes() {
         )}
       </section>
 
-      {/* HISTÓRICO COM COLUNA DE RESPONSÁVEL */}
+      {/* HISTÓRICO */}
       <section>
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
           <h2 className="text-lg font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
             <History size={20} /> Histórico
           </h2>
@@ -348,7 +378,7 @@ export default function Solicitacoes() {
               placeholder="Buscar..."
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              className="bg-[#111] border border-[#222] rounded-xl py-2 pl-10 pr-4 text-xs outline-none focus:border-orange-500 w-64"
+              className="bg-[#111] border border-[#222] rounded-xl py-2.5 pl-10 pr-4 text-xs outline-none focus:border-orange-500 w-64 transition-all"
             />
           </div>
         </div>
@@ -379,7 +409,7 @@ export default function Solicitacoes() {
                       <p className="font-bold uppercase leading-none">
                         {item.colaboradores?.colaborador_nome}
                       </p>
-                      <p className="text-[10px] text-gray-600 font-bold uppercase mt-1">
+                      <p className="text-[10px] text-gray-600 font-bold uppercase mt-1 tracking-tighter">
                         {item.colaboradores?.setor}
                       </p>
                     </td>
@@ -420,10 +450,10 @@ export default function Solicitacoes() {
         </div>
       </section>
 
-      {/* MODAL NOVA SOLICITAÇÃO (Lógica simplificada para o exemplo) */}
+      {/* MODAL NOVA SOLICITAÇÃO */}
       {modalNovoAberto && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
-          <div className="bg-[#111] border border-[#222] rounded-3xl w-full max-w-md p-8 relative">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+          <div className="bg-[#111] border border-[#222] rounded-3xl w-full max-w-md p-8 relative shadow-2xl animate-in zoom-in-95 duration-200">
             <button
               onClick={() => setModalNovoAberto(false)}
               className="absolute right-6 top-6 text-gray-500 hover:text-white"
@@ -434,36 +464,51 @@ export default function Solicitacoes() {
               <Plus className="text-orange-500" /> Nova Solicitação
             </h2>
             <form onSubmit={salvarNovaSolicitacao} className="space-y-5">
-              <select
-                value={novoColabId}
-                onChange={(e) => setNovoColabId(e.target.value)}
-                className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-sm"
-              >
-                <option value="">Selecione...</option>
-                {colaboradores.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.colaborador_nome}
-                  </option>
-                ))}
-              </select>
+              <div>
+                <label className="text-[10px] text-gray-500 font-black uppercase mb-2 block tracking-widest">
+                  Colaborador
+                </label>
+                <select
+                  value={novoColabId}
+                  onChange={(e) => setNovoColabId(e.target.value)}
+                  className="w-full bg-[#1a1a1a] border border-[#333] p-3.5 rounded-xl text-sm outline-none focus:border-orange-500 [color-scheme:dark]"
+                >
+                  <option value="">Selecione...</option>
+                  {colaboradores.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.colaborador_nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="grid grid-cols-2 gap-4">
-                <input
-                  type="date"
-                  value={novaDataInicio}
-                  onChange={(e) => setNovaDataInicio(e.target.value)}
-                  className="bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-sm [color-scheme:dark]"
-                />
-                <input
-                  type="date"
-                  value={novaDataFim}
-                  onChange={(e) => setNovaDataFim(e.target.value)}
-                  className="bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-sm [color-scheme:dark]"
-                />
+                <div>
+                  <label className="text-[10px] text-gray-500 font-black uppercase mb-2 block tracking-widest">
+                    Início
+                  </label>
+                  <input
+                    type="date"
+                    value={novaDataInicio}
+                    onChange={(e) => setNovaDataInicio(e.target.value)}
+                    className="w-full bg-[#1a1a1a] border border-[#333] p-3.5 rounded-xl text-sm outline-none focus:border-orange-500 [color-scheme:dark]"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500 font-black uppercase mb-2 block tracking-widest">
+                    Fim
+                  </label>
+                  <input
+                    type="date"
+                    value={novaDataFim}
+                    onChange={(e) => setNovaDataFim(e.target.value)}
+                    className="w-full bg-[#1a1a1a] border border-[#333] p-3.5 rounded-xl text-sm outline-none focus:border-orange-500 [color-scheme:dark]"
+                  />
+                </div>
               </div>
               <button
                 type="submit"
                 disabled={salvandoNova}
-                className="w-full bg-orange-600 py-4 rounded-2xl font-black uppercase tracking-widest"
+                className="w-full bg-orange-600 hover:bg-orange-700 py-4 rounded-2xl font-black uppercase tracking-widest transition-all"
               >
                 {salvandoNova ? "LANÇANDO..." : "CRIAR SOLICITAÇÃO"}
               </button>
@@ -472,10 +517,10 @@ export default function Solicitacoes() {
         </div>
       )}
 
-      {/* MODAL ANÁLISE (Omissão de repetição do JSX de análise, mas lógica integrada) */}
+      {/* MODAL ANÁLISE */}
       {modalAnaliseAberto && solAtual && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
-          <div className="bg-[#111] border border-[#222] rounded-3xl w-full max-w-lg p-8 relative">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-[#111] border border-[#222] rounded-3xl w-full max-w-lg p-8 relative shadow-2xl">
             <button
               onClick={() => setModalAnaliseAberto(false)}
               className="absolute right-6 top-6 text-gray-500 hover:text-white"
@@ -490,7 +535,7 @@ export default function Solicitacoes() {
               <div className="space-y-4">
                 <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl">
                   <h3 className="text-xs font-black text-red-500 uppercase mb-2">
-                    Conflitos:
+                    Conflitos Encontrados:
                   </h3>
                   <ul className="text-xs text-red-200 list-disc ml-4">
                     {resultadoAnalise.conflitos.map((c, i) => (
@@ -499,16 +544,16 @@ export default function Solicitacoes() {
                   </ul>
                 </div>
                 {resultadoAnalise.sugestao && (
-                  <div className="bg-purple-500/10 border border-purple-500/20 p-4 rounded-xl">
-                    <h3 className="text-xs font-black text-purple-500 uppercase mb-2">
-                      Sugestão:
+                  <div className="bg-purple-500/10 border border-purple-500/20 p-4 rounded-xl text-center">
+                    <h3 className="text-xs font-black text-purple-500 uppercase mb-2 flex items-center justify-center gap-2">
+                      <CalendarDays size={14} /> Sugestão Viável:
                     </h3>
-                    <p className="text-sm font-bold text-purple-400">
+                    <p className="text-lg font-black text-purple-400 font-mono">
                       {format(
                         parseISO(resultadoAnalise.sugestao.inicio),
                         "dd/MM/yy",
                       )}{" "}
-                      até{" "}
+                      —{" "}
                       {format(
                         parseISO(resultadoAnalise.sugestao.fim),
                         "dd/MM/yy",
@@ -519,10 +564,10 @@ export default function Solicitacoes() {
                         decidirSolicitacao(
                           solAtual,
                           "Sugerida",
-                          `Sugerido: ${resultadoAnalise.sugestao.inicio}`,
+                          `Sugestão automática: ${resultadoAnalise.sugestao.inicio}`,
                         )
                       }
-                      className="w-full bg-purple-600 mt-4 py-3 rounded-xl font-black text-xs uppercase"
+                      className="w-full bg-purple-600 hover:bg-purple-700 mt-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-purple-900/40 transition-all"
                     >
                       Enviar Sugestão
                     </button>
@@ -535,12 +580,12 @@ export default function Solicitacoes() {
                   size={48}
                   className="text-green-500 mx-auto mb-4"
                 />
-                <p className="text-green-200 mb-6">
-                  Tudo ok! Esta solicitação respeita todas as regras.
+                <p className="text-green-200 mb-6 font-bold">
+                  Solicitação aprovada pelas regras do sistema!
                 </p>
                 <button
                   onClick={() => decidirSolicitacao(solAtual, "Aprovada")}
-                  className="w-full bg-green-600 py-4 rounded-xl font-black uppercase"
+                  className="w-full bg-green-600 hover:bg-green-700 py-4 rounded-xl font-black uppercase tracking-widest transition-all"
                 >
                   Aprovar Agora
                 </button>

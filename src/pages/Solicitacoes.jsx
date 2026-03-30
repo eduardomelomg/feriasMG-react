@@ -44,64 +44,43 @@ export default function Solicitacoes() {
     sugestao: null,
   });
 
-  // --- 1. FUNÇÃO DE ENVIO DE E-MAIL ---
-  // --- FUNÇÃO DE ENVIO DE E-MAIL ESTILIZADO ---
+  // --- 1. FUNÇÃO DE ENVIO DE E-MAIL (BLINDADA) ---
   const enviarEmailNotificacao = (sol, novoStatus, obs) => {
-    // 1. Verificação de segurança: evita o erro se os dados estiverem nulos
-
     const emailDestino = sol.colaboradores?.email;
 
-    const dataIni = sol.data_inicio;
-
-    const dataFim = sol.data_fim;
-
-    if (!emailDestino || !dataIni || !dataFim) {
-      console.warn(
-        "Dados incompletos para envio de e-mail. Pulando notificação.",
-      );
-
+    // Proteção 1: Se não tem e-mail, não envia, mas NÃO trava o sistema
+    if (!emailDestino) {
+      console.warn("Aviso: E-mail não encontrado para este colaborador.");
       return;
     }
 
-    try {
-      const templateParams = {
-        to_email: emailDestino,
+    // Proteção 2: Tratamento de Datas (Evita o erro de 'split')
+    // Se a data existir, formata. Se for null/undefined, coloca uma mensagem padrão.
+    const dataInicioFormatada = sol.data_inicio
+      ? format(parseISO(sol.data_inicio), "dd/MM/yyyy")
+      : "Data não informada";
+    const dataFimFormatada = sol.data_fim
+      ? format(parseISO(sol.data_fim), "dd/MM/yyyy")
+      : "Data não informada";
 
-        nome_colaborador: sol.colaboradores?.colaborador_nome || "Colaborador",
-
-        status: novoStatus.toUpperCase(),
-
-        cor_status: novoStatus === "Aprovada" ? "#22c55e" : "#ef4444",
-
-        data_inicio: format(parseISO(dataIni), "dd/MM/yyyy"),
-
-        data_fimm: format(parseISO(dataFim), "dd/MM/yyyy"),
-
-        total_dias: sol.total_dias || 0,
-
-        observacao: obs || "Sem observações adicionais.",
-
-        gestor_nome: usuarioLogado?.nome || "Gestão Mendonça Galvão",
-
-        ano_atual: new Date().getFullYear(),
-      };
-
-      emailjs
-        .send(
-          "service_11757ik",
-
-          "template_rh69u4f",
-
-          templateParams,
-
-          "fsICO4HR_P76kh5R5",
-        )
-        .then(() => console.log("E-mail enviado!"))
-
-        .catch((err) => console.error("Erro EmailJS:", err));
-    } catch (error) {
-      console.error("Erro ao processar dados do e-mail:", error);
-    }
+    const templateParams = {
+      nome_colaborador: sol.colaboradores?.colaborador_nome || "Colaborador",
+      to_email: emailDestino,
+      status: novoStatus.toUpperCase(),
+      data_inicio: dataInicioFormatada,
+      data_fimm: dataFimFormatada,
+      observacao: obs || "Sem observações adicionais.",
+      gestor_nome: usuarioLogado?.nome || "Administração Mendonça Galvão",
+    };
+    emailjs
+      .send(
+        "service_11757ik",
+        "template_rh69u4f",
+        templateParams,
+        "fsICO4HR_P76kh5R5",
+      )
+      .then(() => console.log("Notificação enviada com sucesso!"))
+      .catch((err) => console.error("Erro ao enviar e-mail:", err));
   };
 
   // --- 2. BUSCA DE DADOS ---

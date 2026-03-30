@@ -45,25 +45,44 @@ export default function Solicitacoes() {
   });
 
   // --- 1. FUNÇÃO DE ENVIO DE E-MAIL ---
+  // --- FUNÇÃO DE ENVIO DE E-MAIL ESTILIZADO ---
   const enviarEmailNotificacao = (sol, novoStatus, obs) => {
     const emailDestino = sol.colaboradores?.email;
-    if (!emailDestino) return console.warn("E-mail não encontrado.");
+
+    if (!emailDestino) {
+      console.warn("E-mail não encontrado no banco para este colaborador.");
+      return;
+    }
+
+    // Mapeamento de cores para o status
+    const corStatus = novoStatus === "Aprovada" ? "#22c55e" : "#ef4444";
 
     const templateParams = {
-      nome_colaborador: sol.colaboradores?.colaborador_nome,
       to_email: emailDestino,
+      nome_colaborador: sol.colaboradores?.colaborador_nome,
       status: novoStatus.toUpperCase(),
+      cor_status: corStatus, // Cor dinâmica para o e-mail
       data_inicio: format(parseISO(sol.data_inicio), "dd/MM/yyyy"),
-      data_fim: format(parseISO(sol.data_fim), "dd/MM/yyyy"),
-      observacao: obs || "Sem observações adicionais.",
-      gestor: usuarioLogado?.nome || "Administração Mendonça Galvão",
+      data_fimm: format(parseISO(sol.data_fimm), "dd/MM/yyyy"), // Use 'data_fimm' para evitar conflito com 'fim'
+      total_dias: sol.total_dias,
+      observacao: obs || "Nenhuma observação informada.",
+      gestor_nome: usuarioLogado?.nome || "Mendonça Galvão",
+      ano_atual: new Date().getFullYear(),
     };
 
-    // SUBSTITUA PELOS SEUS IDS DO EMAILJS
     emailjs
-      .send("service_id", "template_id", templateParams, "public_key")
-      .then(() => console.log("Notificação enviada com sucesso!"))
-      .catch((err) => console.error("Erro ao enviar e-mail:", err));
+      .send(
+        "service_11757ik",
+        "template_rh69u4f",
+        templateParams,
+        "fsICO4HR_P76kh5R5",
+      )
+      .then(() => {
+        console.log("E-mail visual enviado com sucesso!");
+      })
+      .catch((err) => {
+        console.error("Falha no envio visual:", err);
+      });
   };
 
   // --- 2. BUSCA DE DADOS ---

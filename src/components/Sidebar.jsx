@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 // 1. Importe sua logo aqui (ajuste o nome do arquivo se for .svg, .png ou .jpg)
-import logoMarca from "../assets/LogoFav.png";
+import logoMarca from "../assets/LogoV2.png";
 
 export default function Sidebar() {
   const [contagem, setContagem] = useState(0);

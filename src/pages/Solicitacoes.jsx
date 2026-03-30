@@ -47,42 +47,57 @@ export default function Solicitacoes() {
   // --- 1. FUNÇÃO DE ENVIO DE E-MAIL ---
   // --- FUNÇÃO DE ENVIO DE E-MAIL ESTILIZADO ---
   const enviarEmailNotificacao = (sol, novoStatus, obs) => {
+    // 1. Verificação de segurança: se não tiver e-mail ou datas, ele não trava o sistema
+
     const emailDestino = sol.colaboradores?.email;
 
-    if (!emailDestino) {
-      console.warn("E-mail não encontrado no banco para este colaborador.");
+    if (!emailDestino || !sol.data_inicio || !sol.data_fim) {
+      console.warn(
+        "Dados insuficientes para envio de e-mail (E-mail ou Datas ausentes).",
+      );
+
       return;
     }
 
-    // Mapeamento de cores para o status
-    const corStatus = novoStatus === "Aprovada" ? "#22c55e" : "#ef4444";
+    try {
+      const templateParams = {
+        to_email: emailDestino,
 
-    const templateParams = {
-      to_email: emailDestino,
-      nome_colaborador: sol.colaboradores?.colaborador_nome,
-      status: novoStatus.toUpperCase(),
-      cor_status: corStatus, // Cor dinâmica para o e-mail
-      data_inicio: format(parseISO(sol.data_inicio), "dd/MM/yyyy"),
-      data_fimm: format(parseISO(sol.data_fimm), "dd/MM/yyyy"), // Use 'data_fimm' para evitar conflito com 'fim'
-      total_dias: sol.total_dias,
-      observacao: obs || "Nenhuma observação informada.",
-      gestor_nome: usuarioLogado?.nome || "Mendonça Galvão",
-      ano_atual: new Date().getFullYear(),
-    };
+        nome_colaborador: sol.colaboradores?.colaborador_nome || "Colaborador",
 
-    emailjs
-      .send(
-        "service_11757ik",
-        "template_rh69u4f",
-        templateParams,
-        "fsICO4HR_P76kh5R5",
-      )
-      .then(() => {
-        console.log("E-mail visual enviado com sucesso!");
-      })
-      .catch((err) => {
-        console.error("Falha no envio visual:", err);
-      });
+        status: novoStatus.toUpperCase(),
+
+        cor_status: novoStatus === "Aprovada" ? "#22c55e" : "#ef4444",
+
+        data_inicio: format(parseISO(sol.data_inicio), "dd/MM/yyyy"),
+
+        data_fimm: format(parseISO(sol.data_fim), "dd/MM/yyyy"),
+
+        total_dias: sol.total_dias || 0,
+
+        observacao: obs || "Sem observações adicionais.",
+
+        gestor_nome: usuarioLogado?.nome || "Mendonça Galvão",
+
+        ano_atual: new Date().getFullYear(),
+      };
+
+      emailjs
+        .send(
+          "service_11757ik",
+
+          "template_rh69u4f",
+
+          templateParams,
+
+          "fsICO4HR_P76kh5R5",
+        )
+        .then(() => console.log("E-mail enviado!"))
+
+        .catch((err) => console.error("Erro no EmailJS:", err));
+    } catch (error) {
+      console.error("Erro ao formatar dados para o e-mail:", error);
+    }
   };
 
   // --- 2. BUSCA DE DADOS ---

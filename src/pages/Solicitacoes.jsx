@@ -45,7 +45,7 @@ export default function Solicitacoes() {
   const [solAtual, setSolAtual] = useState(null);
   const [editDataInicio, setEditDataInicio] = useState("");
   const [editDataFim, setEditDataFim] = useState("");
-  const [editStatus, setEditStatus] = useState(""); // NOVO: Permite alterar o status
+  const [editStatus, setEditStatus] = useState("");
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
 
   const [resultadoAnalise, setResultadoAnalise] = useState({
@@ -200,7 +200,6 @@ export default function Solicitacoes() {
 
       if (error) throw error;
 
-      // Se alterou o status, avisa por email
       if (editStatus !== solAtual.status && editStatus !== "Pendente") {
         enviarEmailNotificacao(
           solAtual,

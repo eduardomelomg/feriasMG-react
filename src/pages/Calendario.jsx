@@ -234,85 +234,112 @@ export default function Calendario() {
       {/* ========================================== */}
       {/* MODAL DE DETALHES DO DIA */}
       {/* ========================================== */}
+      {/* ========================================== */}
+      {/* NOVO MODAL DE DETALHES DO DIA (DESIGN PREMIUM) */}
+      {/* ========================================== */}
       {diaSelecionado && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
-          <div className="bg-[#111] border border-[#222] rounded-3xl w-full max-w-md p-8 relative shadow-2xl">
+          <div className="bg-[#1c1c21] rounded-3xl w-full max-w-md p-8 relative shadow-2xl border border-[#2a2a2d]">
+            {/* Botão X no canto superior */}
             <button
               onClick={() => setDiaSelecionado(null)}
-              className="absolute right-6 top-6 text-gray-500 hover:text-white transition-colors"
+              className="absolute right-5 top-5 text-gray-400 hover:text-white transition-colors"
             >
-              <X size={20} />
+              <X size={24} />
             </button>
 
-            <h2 className="text-xl font-bold mb-2 flex items-center gap-2 text-white">
-              <CalendarIcon className="text-orange-500" size={20} />
-              Detalhes do Dia
-            </h2>
-            <p className="text-xs text-gray-500 uppercase font-black tracking-widest mb-6 pb-4 border-b border-[#222] capitalize">
-              {format(diaSelecionado, "EEEE, dd 'de' MMMM 'de' yyyy", {
-                locale: ptBR,
-              })}
-            </p>
+            {/* Cabeçalho Centralizado */}
+            <div className="flex flex-col items-center mt-2 mb-6">
+              <CalendarIcon
+                className="text-orange-500 mb-4"
+                size={44}
+                strokeWidth={1.5}
+              />
+              <h2 className="text-2xl font-bold text-white mb-2 tracking-wide">
+                Detalhes do Dia
+              </h2>
+              <p className="text-[11px] text-gray-400 uppercase font-black tracking-widest text-center">
+                {format(diaSelecionado, "EEEE, dd 'de' MMMM 'de' yyyy", {
+                  locale: ptBR,
+                })}
+              </p>
+            </div>
 
-            <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-              {/* Se não houver nada */}
+            <hr className="border-[#2a2a2d] mb-6" />
+
+            {/* Conteúdo rolável */}
+            <div className="space-y-6 max-h-[50vh] overflow-y-auto custom-scrollbar">
               {eventosNoDiaSelecionado.length === 0 &&
                 feriadoNoDiaSelecionado.length === 0 && (
-                  <p className="text-center text-gray-600 font-bold uppercase text-xs py-8">
+                  <p className="text-center text-gray-500 font-bold uppercase text-xs py-4">
                     Nenhum registro para este dia.
                   </p>
                 )}
 
-              {/* Lista de Feriados */}
+              {/* Feriados */}
               {feriadoNoDiaSelecionado.map((f, idx) => (
-                <div
-                  key={`f-${idx}`}
-                  className="bg-red-500/5 border border-red-500/20 p-4 rounded-xl flex items-start gap-3"
-                >
-                  <div className="p-2 bg-red-500/10 rounded-lg text-red-500 mt-1">
-                    <Flag size={16} />
+                <div key={`f-${idx}`} className="flex items-start gap-4">
+                  {/* Fundo arredondado do ícone */}
+                  <div className="w-14 h-14 rounded-2xl bg-red-500/10 flex items-center justify-center shrink-0 border border-red-500/10">
+                    <Flag
+                      className="text-red-500"
+                      size={26}
+                      strokeWidth={1.5}
+                    />
                   </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-red-400 uppercase">
+                  <div className="flex-1">
+                    <h3 className="text-[17px] font-bold text-white mb-1">
                       {f.titulo}
                     </h3>
-                    <p className="text-[10px] text-gray-500 font-bold mt-1 uppercase">
-                      Feriado / Recesso
-                    </p>
+                    <div className="flex justify-between items-start">
+                      <p className="text-[13px] text-gray-400 uppercase tracking-wide">
+                        Feriado / Recesso
+                      </p>
+                      <p className="text-[13px] text-gray-400 whitespace-nowrap">
+                        {formatarDataSegura(f.data_inicio)} —{" "}
+                        {formatarDataSegura(f.data_fim)}
+                      </p>
+                    </div>
                   </div>
                 </div>
               ))}
 
-              {/* Lista de Férias */}
+              {/* Férias */}
               {eventosNoDiaSelecionado.map((ev, idx) => (
-                <div
-                  key={`ev-${idx}`}
-                  className="bg-[#161616] border border-[#222] p-4 rounded-xl flex items-start gap-3"
-                >
-                  <div className="p-2 bg-orange-500/10 rounded-lg text-orange-500 mt-1">
-                    <PlaneTakeoff size={16} />
+                <div key={`ev-${idx}`} className="flex items-start gap-4">
+                  {/* Fundo arredondado do ícone (Marrom/Laranja) */}
+                  <div className="w-14 h-14 rounded-2xl bg-[#362015] flex items-center justify-center shrink-0 border border-orange-900/30">
+                    <PlaneTakeoff
+                      className="text-orange-500"
+                      size={26}
+                      strokeWidth={1.5}
+                    />
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-sm font-bold text-white uppercase">
-                      {ev.colaboradores?.colaborador_nome || "Desconhecido"}
+                    <h3 className="text-[17px] font-bold text-white mb-1 capitalize">
+                      {ev.colaboradores?.colaborador_nome?.toLowerCase() ||
+                        "Desconhecido"}
                     </h3>
-                    <div className="flex justify-between items-center mt-2">
-                      <span className="text-[9px] bg-[#222] text-gray-400 px-2 py-1 rounded uppercase font-black">
-                        {ev.colaboradores?.setor || "Sem Setor"}
-                      </span>
-                      <span className="text-[10px] text-gray-500 font-bold tracking-widest">
+                    <div className="flex justify-between items-start">
+                      <p className="text-[13px] text-gray-400 capitalize w-28 leading-relaxed">
+                        {ev.colaboradores?.setor?.toLowerCase() || "Sem setor"}
+                      </p>
+                      <p className="text-[13px] text-gray-400 whitespace-nowrap mt-0.5">
                         {formatarDataSegura(ev.data_inicio)} —{" "}
                         {formatarDataSegura(ev.data_fim)}
-                      </span>
+                      </p>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
 
+            <hr className="border-[#2a2a2d] mt-6 mb-6" />
+
+            {/* Botão Fechar (Laranja Sólido) */}
             <button
               onClick={() => setDiaSelecionado(null)}
-              className="w-full mt-6 bg-[#1a1a1a] hover:bg-[#222] text-gray-300 py-3 rounded-xl font-black uppercase tracking-widest transition-colors text-xs border border-[#333]"
+              className="w-full bg-[#ea580c] hover:bg-[#c2410c] text-white py-4 rounded-xl font-bold uppercase tracking-widest transition-colors text-[13px]"
             >
               Fechar
             </button>

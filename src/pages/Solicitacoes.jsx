@@ -84,19 +84,24 @@ export default function Solicitacoes() {
   };
 
   const enviarEmailNotificacao = (sol, novoStatus, obs) => {
-    const emailDestino = sol.colaboradores?.email;
+    // Busca o e-mail tanto na relação quanto no objeto direto
+    const emailDestino = sol.colaboradores?.email || sol.email;
+    const nomeColab =
+      sol.colaboradores?.colaborador_nome || sol.colaborador_nome;
+
     if (!emailDestino) {
+      console.warn("E-mail não encontrado para notificação.");
       return;
     }
 
     const templateParams = {
-      nome_colaborador: sol.colaboradores?.colaborador_nome || "Colaborador",
+      nome_colaborador: nomeColab || "Colaborador",
       to_email: emailDestino,
       status: novoStatus.toUpperCase(),
       data_inicio: formatarDataSegura(sol.data_inicio, "dd/MM/yyyy"),
       data_fimm: formatarDataSegura(sol.data_fim, "dd/MM/yyyy"),
-      observacao: obs || "Sem observações adicionais.",
-      gestor_nome: usuarioLogado?.nome || "Gestão",
+      observacao: obs || "Sua solicitação entrou em processamento.",
+      gestor_nome: usuarioLogado?.nome || "Gestão de RH",
     };
 
     emailjs
@@ -106,8 +111,8 @@ export default function Solicitacoes() {
         templateParams,
         "fsICO4HR_P76kh5R5",
       )
-      .then(() => console.log("Notificação enviada com sucesso!"))
-      .catch((err) => console.error("Erro EmailJS:", err));
+      .then(() => console.log(`E-mail de ${novoStatus} enviado!`))
+      .catch((err) => console.error("Erro ao enviar e-mail:", err));
   };
 
   async function buscarDados() {
@@ -175,19 +180,32 @@ export default function Solicitacoes() {
     setSalvandoNova(true);
 
     try {
-      const { error } = await supabase.from("solicitacoes").insert([
-        {
-          colaborador_id: novoColabId,
-          colaborador_nome: colabSelecionado?.colaborador_nome || "",
-          setor: colabSelecionado?.setor || "",
-          data_inicio: novaDataInicio,
-          data_fim: novaDataFim,
-          total_dias: diasCalculados,
-          status: "Pendente",
-          created_at: new Date().toISOString(),
-        },
-      ]);
+      // Criamos a solicitação e já pedimos os dados do colaborador de volta
+      const { data, error } = await supabase
+        .from("solicitacoes")
+        .insert([
+          {
+            colaborador_id: novoColabId,
+            colaborador_nome: colabSelecionado?.colaborador_nome || "",
+            setor: colabSelecionado?.setor || "",
+            data_inicio: novaDataInicio,
+            data_fim: novaDataFim,
+            total_dias: diasCalculados,
+            status: "Pendente",
+            created_at: new Date().toISOString(),
+          },
+        ])
+        .select(`*, colaboradores (colaborador_nome, email)`)
+        .single();
+
       if (error) throw error;
+
+      // DISPARA E-MAIL DE SOLICITAÇÃO RECEBIDA
+      enviarEmailNotificacao(
+        data,
+        "Recebida",
+        "Sua solicitação de férias foi recebida e está aguardando análise da gestão.",
+      );
 
       setModalNovoAberto(false);
       setNovoColabId("");
@@ -195,6 +213,9 @@ export default function Solicitacoes() {
       setNovaDataFim("");
 
       buscarDados();
+      alert(
+        "Solicitação enviada com sucesso! O colaborador foi notificado por e-mail.",
+      );
     } catch (error) {
       alert("Erro ao criar: " + error.message);
     } finally {

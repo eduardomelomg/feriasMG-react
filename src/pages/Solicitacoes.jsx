@@ -157,7 +157,6 @@ export default function Solicitacoes() {
     e.preventDefault();
     if (!novoColabId || !novaDataInicio || !novaDataFim)
       return alert("Preencha tudo!");
-    if (saldoInsuficiente) return alert("Saldo de férias insuficiente!");
     if (datasInvertidas)
       return alert("A data de fim não pode ser antes do início!");
 
@@ -748,8 +747,8 @@ export default function Solicitacoes() {
 
               <button
                 type="submit"
-                disabled={salvandoNova || saldoInsuficiente || datasInvertidas}
-                className={`w-full py-4 rounded-xl font-black uppercase tracking-widest transition-colors mt-2 ${saldoInsuficiente || datasInvertidas ? "bg-gray-800 text-gray-500 cursor-not-allowed" : "bg-orange-600 hover:bg-orange-500 text-white"}`}
+                disabled={salvandoNova || datasInvertidas}
+                className={`w-full py-4 rounded-xl font-black uppercase tracking-widest transition-colors mt-2 ${datasInvertidas ? "bg-gray-800 text-gray-500 cursor-not-allowed" : "bg-orange-600 hover:bg-orange-500 text-white"}`}
               >
                 {salvandoNova ? "Salvando..." : "Criar Solicitação"}
               </button>

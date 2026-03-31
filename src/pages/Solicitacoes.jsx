@@ -33,7 +33,7 @@ export default function Solicitacoes() {
   // Modais
   const [modalNovoAberto, setModalNovoAberto] = useState(false);
   const [modalAnaliseAberto, setModalAnaliseAberto] = useState(false);
-  const [modalEditarAberto, setModalEditarAberto] = useState(false); // NOVO: Modal de Edição
+  const [modalEditarAberto, setModalEditarAberto] = useState(false);
 
   // Estados de Criação
   const [novoColabId, setNovoColabId] = useState("");
@@ -41,11 +41,13 @@ export default function Solicitacoes() {
   const [novaDataFim, setNovaDataFim] = useState("");
   const [salvandoNova, setSalvandoNova] = useState(false);
 
-  // Estados de Edição e Análise
+  // Estados de Edição
   const [solAtual, setSolAtual] = useState(null);
   const [editDataInicio, setEditDataInicio] = useState("");
   const [editDataFim, setEditDataFim] = useState("");
+  const [editStatus, setEditStatus] = useState(""); // NOVO: Permite alterar o status
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
+
   const [resultadoAnalise, setResultadoAnalise] = useState({
     conflitos: [],
     sugestao: null,
@@ -170,6 +172,7 @@ export default function Solicitacoes() {
     setSolAtual(sol);
     setEditDataInicio(sol.data_inicio || "");
     setEditDataFim(sol.data_fim || "");
+    setEditStatus(sol.status || "Pendente");
     setModalEditarAberto(true);
   };
 
@@ -189,11 +192,23 @@ export default function Solicitacoes() {
           data_inicio: editDataInicio,
           data_fim: editDataFim,
           total_dias: dias,
+          status: editStatus,
           updated_at: new Date().toISOString(),
+          aprovado_por: usuarioLogado?.nome || "Sistema",
         })
         .eq("id", solAtual.id);
 
       if (error) throw error;
+
+      // Se alterou o status, avisa por email
+      if (editStatus !== solAtual.status && editStatus !== "Pendente") {
+        enviarEmailNotificacao(
+          solAtual,
+          editStatus,
+          "Solicitação alterada manualmente.",
+        );
+      }
+
       alert("Solicitação atualizada com sucesso!");
       setModalEditarAberto(false);
       buscarDados();
@@ -409,7 +424,6 @@ export default function Solicitacoes() {
                   </div>
                 </div>
 
-                {/* BOTÕES DE AÇÃO E CRUD */}
                 <div className="flex items-center gap-2 flex-wrap md:flex-nowrap">
                   <button
                     onClick={() => decidirSolicitacao(sol, "Aprovada")}
@@ -433,13 +447,12 @@ export default function Solicitacoes() {
                     <XCircle size={14} /> Negar
                   </button>
 
-                  {/* Divisor vertical */}
                   <div className="w-px h-8 bg-[#333] mx-1"></div>
 
-                  {/* Botões CRUD */}
+                  {/* BOTÃO ALTERAR (Lápis Azul) */}
                   <button
                     onClick={() => abrirModalEditar(sol)}
-                    title="Editar"
+                    title="Alterar/Editar"
                     className="h-10 w-10 flex items-center justify-center bg-blue-600/10 text-blue-500 hover:bg-blue-600/20 rounded-xl transition-colors"
                   >
                     <Edit size={16} />
@@ -534,7 +547,15 @@ export default function Solicitacoes() {
                       </span>
                     </td>
                     <td className="p-4 text-right">
-                      {/* Botão de Excluir no Histórico */}
+                      {/* BOTÃO ALTERAR (Lápis) NO HISTÓRICO */}
+                      <button
+                        onClick={() => abrirModalEditar(item)}
+                        className="p-2 text-gray-600 hover:text-blue-500 transition-colors inline-block mr-2"
+                        title="Alterar Solicitação"
+                      >
+                        <Edit size={16} />
+                      </button>
+                      {/* BOTÃO EXCLUIR */}
                       <button
                         onClick={() => excluirSolicitacao(item.id)}
                         className="p-2 text-gray-600 hover:text-red-500 transition-colors inline-block"
@@ -611,7 +632,7 @@ export default function Solicitacoes() {
         </div>
       )}
 
-      {/* Modal: Editar Solicitação */}
+      {/* Modal: Editar/Alterar Solicitação */}
       {modalEditarAberto && solAtual && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
           <div className="bg-[#111] border border-[#222] rounded-3xl w-full max-w-md p-8 relative shadow-2xl shadow-blue-900/10">
@@ -622,7 +643,7 @@ export default function Solicitacoes() {
               <X size={20} />
             </button>
             <h2 className="text-xl font-bold mb-2 flex items-center gap-2 text-blue-500">
-              <Edit size={20} /> Editar Solicitação
+              <Edit size={20} /> Alterar Solicitação
             </h2>
             <p className="text-xs text-gray-500 uppercase font-bold tracking-widest mb-6">
               Colaborador:{" "}
@@ -632,6 +653,23 @@ export default function Solicitacoes() {
             </p>
 
             <form onSubmit={salvarEdicao} className="space-y-4">
+              {/* Alterar Status */}
+              <div>
+                <label className="text-[10px] text-gray-500 font-bold uppercase ml-1 block mb-1">
+                  Status Atual
+                </label>
+                <select
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value)}
+                  className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-sm outline-none focus:border-blue-500 transition-colors"
+                >
+                  <option value="Pendente">Pendente</option>
+                  <option value="Aprovada">Aprovada</option>
+                  <option value="Reprovada">Reprovada</option>
+                </select>
+              </div>
+
+              {/* Alterar Datas */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] text-gray-500 font-bold uppercase ml-1 block mb-1">
@@ -656,6 +694,7 @@ export default function Solicitacoes() {
                   />
                 </div>
               </div>
+
               <button
                 type="submit"
                 disabled={salvandoEdicao}

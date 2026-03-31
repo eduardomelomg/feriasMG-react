@@ -13,6 +13,8 @@ import {
   X,
   BrainCircuit,
   CalendarDays,
+  Edit,
+  Trash2,
 } from "lucide-react";
 import { format, parseISO, differenceInDays, addDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -28,29 +30,36 @@ export default function Solicitacoes() {
   const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState("");
 
+  // Modais
   const [modalNovoAberto, setModalNovoAberto] = useState(false);
+  const [modalAnaliseAberto, setModalAnaliseAberto] = useState(false);
+  const [modalEditarAberto, setModalEditarAberto] = useState(false); // NOVO: Modal de Edição
+
+  // Estados de Criação
   const [novoColabId, setNovoColabId] = useState("");
   const [novaDataInicio, setNovaDataInicio] = useState("");
   const [novaDataFim, setNovaDataFim] = useState("");
   const [salvandoNova, setSalvandoNova] = useState(false);
 
-  const [modalAnaliseAberto, setModalAnaliseAberto] = useState(false);
+  // Estados de Edição e Análise
   const [solAtual, setSolAtual] = useState(null);
+  const [editDataInicio, setEditDataInicio] = useState("");
+  const [editDataFim, setEditDataFim] = useState("");
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
   const [resultadoAnalise, setResultadoAnalise] = useState({
     conflitos: [],
     sugestao: null,
   });
 
-  // 🛡️ ESCUDO TITÂNIO CONTRA O ERRO 'SPLIT' (SEM AVISOS NO VS CODE)
+  // 🛡️ ESCUDO TITÂNIO
   const formatarDataSegura = (data, formato = "dd/MM/yy") => {
     if (!data) return "---";
     try {
-      // Verifica se é texto ou objeto Date para não bugar o parseISO
       const dateObj =
         typeof data === "string" ? parseISO(data) : new Date(data);
       return format(dateObj, formato, { locale: ptBR });
     } catch (err) {
-      console.warn("Erro ao formatar data (ignorado):", err); // Variável usada! O linter não vai travar.
+      console.warn("Erro ao formatar data:", err);
       return "Data Inválida";
     }
   };
@@ -119,14 +128,108 @@ export default function Solicitacoes() {
     buscarDados();
   }, []);
 
-  const diasSelecionados =
-    novaDataInicio && novaDataFim
-      ? differenceInDays(parseISO(novaDataFim), parseISO(novaDataInicio)) + 1
-      : 0;
+  // ==========================================
+  // FUNÇÕES DO CRUD
+  // ==========================================
+
+  // CREATE (Criar)
+  const salvarNovaSolicitacao = async (e) => {
+    e.preventDefault();
+    if (!novoColabId || !novaDataInicio || !novaDataFim)
+      return alert("Preencha tudo!");
+    setSalvandoNova(true);
+    const dias =
+      differenceInDays(parseISO(novaDataFim), parseISO(novaDataInicio)) + 1;
+
+    try {
+      const colab = colaboradores.find((c) => c.id === novoColabId);
+      const { error } = await supabase.from("solicitacoes").insert([
+        {
+          colaborador_id: novoColabId,
+          colaborador_nome: colab?.colaborador_nome || "",
+          setor: colab?.setor || "",
+          data_inicio: novaDataInicio,
+          data_fim: novaDataFim,
+          total_dias: dias,
+          status: "Pendente",
+          created_at: new Date().toISOString(),
+        },
+      ]);
+      if (error) throw error;
+      setModalNovoAberto(false);
+      buscarDados();
+    } catch (error) {
+      alert("Erro ao criar: " + error.message);
+    } finally {
+      setSalvandoNova(false);
+    }
+  };
+
+  // UPDATE (Editar - Preparar Modal)
+  const abrirModalEditar = (sol) => {
+    setSolAtual(sol);
+    setEditDataInicio(sol.data_inicio || "");
+    setEditDataFim(sol.data_fim || "");
+    setModalEditarAberto(true);
+  };
+
+  // UPDATE (Editar - Salvar no Banco)
+  const salvarEdicao = async (e) => {
+    e.preventDefault();
+    if (!editDataInicio || !editDataFim)
+      return alert("As datas não podem ficar vazias!");
+    setSalvandoEdicao(true);
+    const dias =
+      differenceInDays(parseISO(editDataFim), parseISO(editDataInicio)) + 1;
+
+    try {
+      const { error } = await supabase
+        .from("solicitacoes")
+        .update({
+          data_inicio: editDataInicio,
+          data_fim: editDataFim,
+          total_dias: dias,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", solAtual.id);
+
+      if (error) throw error;
+      alert("Solicitação atualizada com sucesso!");
+      setModalEditarAberto(false);
+      buscarDados();
+    } catch (error) {
+      alert("Erro ao editar: " + error.message);
+    } finally {
+      setSalvandoEdicao(false);
+    }
+  };
+
+  // DELETE (Excluir)
+  const excluirSolicitacao = async (id) => {
+    if (
+      !confirm(
+        "Tem certeza que deseja EXCLUIR esta solicitação? Esta ação não pode ser desfeita.",
+      )
+    )
+      return;
+    try {
+      const { error } = await supabase
+        .from("solicitacoes")
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+      buscarDados();
+    } catch (error) {
+      alert("Erro ao excluir: " + error.message);
+    }
+  };
+
+  // ==========================================
+  // FUNÇÕES DE LÓGICA (Análise e Decisão)
+  // ==========================================
 
   const checarConflitos = (inicio, fim, setor) => {
     if (!inicio || !fim) return ["Datas da solicitação estão vazias."];
-
     let conflitos = [];
     const dInicio =
       typeof inicio === "string" ? parseISO(inicio) : new Date(inicio);
@@ -218,7 +321,6 @@ export default function Solicitacoes() {
         .eq("id", sol.id);
 
       if (error) throw error;
-
       enviarEmailNotificacao(sol, novoStatus, obs);
 
       if (novoStatus === "Aprovada") {
@@ -236,35 +338,6 @@ export default function Solicitacoes() {
     }
   };
 
-  const salvarNovaSolicitacao = async (e) => {
-    e.preventDefault();
-    if (!novoColabId || !novaDataInicio || !novaDataFim)
-      return alert("Preencha tudo!");
-    setSalvandoNova(true);
-    try {
-      const colab = colaboradores.find((c) => c.id === novoColabId);
-      const { error } = await supabase.from("solicitacoes").insert([
-        {
-          colaborador_id: novoColabId,
-          colaborador_nome: colab?.colaborador_nome || "",
-          setor: colab?.setor || "",
-          data_inicio: novaDataInicio,
-          data_fim: novaDataFim,
-          total_dias: diasSelecionados,
-          status: "Pendente",
-          created_at: new Date().toISOString(),
-        },
-      ]);
-      if (error) throw error;
-      setModalNovoAberto(false);
-      buscarDados();
-    } catch (error) {
-      alert("Erro: " + error.message);
-    } finally {
-      setSalvandoNova(false);
-    }
-  };
-
   return (
     <div className="p-8 max-w-7xl mx-auto text-white">
       <header className="mb-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -275,12 +348,13 @@ export default function Solicitacoes() {
         </div>
         <button
           onClick={() => setModalNovoAberto(true)}
-          className="bg-orange-600 px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg"
+          className="bg-orange-600 px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg hover:bg-orange-500 transition-colors"
         >
           <Plus size={18} className="inline mr-2" /> Nova Solicitação
         </button>
       </header>
 
+      {/* PENDÊNCIAS */}
       <section className="mb-12">
         <h2 className="text-lg font-bold uppercase tracking-widest mb-6 flex items-center gap-2">
           <AlertCircle className="text-yellow-500" /> Pendências (
@@ -290,12 +364,16 @@ export default function Solicitacoes() {
           <p className="text-center p-10 text-gray-500 animate-pulse font-black uppercase text-xs">
             Sincronizando Banco...
           </p>
+        ) : pendentes.length === 0 ? (
+          <p className="text-center p-10 text-gray-500 font-bold uppercase text-xs">
+            Nenhuma pendência no momento.
+          </p>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {pendentes.map((sol) => (
               <div
                 key={sol.id}
-                className="bg-[#111] border border-[#222] p-3 pl-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4"
+                className="bg-[#111] border border-[#222] p-4 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4"
               >
                 <div className="flex items-center gap-4 flex-1">
                   <div className="w-10 h-10 rounded-full bg-[#1a1a1a] flex items-center justify-center text-orange-500 font-bold border border-[#333]">
@@ -310,7 +388,8 @@ export default function Solicitacoes() {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-8 px-4 py-2 bg-[#161616] rounded-xl border border-[#222]">
+
+                <div className="flex items-center gap-6 px-4 py-2 bg-[#161616] rounded-xl border border-[#222]">
                   <div className="flex flex-col">
                     <span className="text-[9px] text-gray-500 font-bold uppercase">
                       Período
@@ -320,33 +399,57 @@ export default function Solicitacoes() {
                       {formatarDataSegura(sol.data_fim)}
                     </span>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right border-l border-[#333] pl-4">
                     <span className="text-[9px] text-gray-500 font-bold uppercase block">
                       Total
                     </span>
                     <span className="text-sm font-black text-orange-500">
-                      {sol.total_dias || 0} dias
+                      {sol.total_dias || 0}d
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+
+                {/* BOTÕES DE AÇÃO E CRUD */}
+                <div className="flex items-center gap-2 flex-wrap md:flex-nowrap">
                   <button
                     onClick={() => decidirSolicitacao(sol, "Aprovada")}
-                    className="h-10 px-4 bg-green-600/10 text-green-500 rounded-xl text-[10px] font-black uppercase flex items-center gap-1.5"
+                    title="Aprovar"
+                    className="h-10 px-4 bg-green-600/10 text-green-500 hover:bg-green-600/20 rounded-xl text-[10px] font-black uppercase flex items-center gap-1.5 transition-colors"
                   >
                     <CheckCircle size={14} /> Aprovar
                   </button>
                   <button
                     onClick={() => processarAnalise(sol)}
-                    className="h-10 px-4 bg-purple-600/10 text-purple-500 rounded-xl text-[10px] font-black uppercase flex items-center gap-1.5"
+                    title="Analisar IA"
+                    className="h-10 px-4 bg-purple-600/10 text-purple-500 hover:bg-purple-600/20 rounded-xl text-[10px] font-black uppercase flex items-center gap-1.5 transition-colors"
                   >
                     <BrainCircuit size={14} /> Analisar
                   </button>
                   <button
                     onClick={() => decidirSolicitacao(sol, "Reprovada")}
-                    className="h-10 px-4 bg-red-600/5 text-red-500 rounded-xl text-[10px] font-black uppercase flex items-center gap-1.5"
+                    title="Reprovar"
+                    className="h-10 px-4 bg-red-600/5 text-red-500 hover:bg-red-600/20 rounded-xl text-[10px] font-black uppercase flex items-center gap-1.5 transition-colors"
                   >
                     <XCircle size={14} /> Negar
+                  </button>
+
+                  {/* Divisor vertical */}
+                  <div className="w-px h-8 bg-[#333] mx-1"></div>
+
+                  {/* Botões CRUD */}
+                  <button
+                    onClick={() => abrirModalEditar(sol)}
+                    title="Editar"
+                    className="h-10 w-10 flex items-center justify-center bg-blue-600/10 text-blue-500 hover:bg-blue-600/20 rounded-xl transition-colors"
+                  >
+                    <Edit size={16} />
+                  </button>
+                  <button
+                    onClick={() => excluirSolicitacao(sol.id)}
+                    title="Excluir"
+                    className="h-10 w-10 flex items-center justify-center bg-gray-800 text-gray-500 hover:bg-red-900/40 hover:text-red-500 rounded-xl transition-colors"
+                  >
+                    <Trash2 size={16} />
                   </button>
                 </div>
               </div>
@@ -355,6 +458,7 @@ export default function Solicitacoes() {
         )}
       </section>
 
+      {/* HISTÓRICO */}
       <section>
         <div className="flex flex-col md:flex-row justify-between items-center mb-6">
           <h2 className="text-lg font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
@@ -367,10 +471,10 @@ export default function Solicitacoes() {
             />
             <input
               type="text"
-              placeholder="Buscar..."
+              placeholder="Buscar no histórico..."
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              className="bg-[#111] border border-[#222] rounded-xl py-2 pl-10 pr-4 text-xs outline-none w-64"
+              className="bg-[#111] border border-[#222] rounded-xl py-2 pl-10 pr-4 text-xs outline-none w-64 focus:border-orange-500 transition-colors"
             />
           </div>
         </div>
@@ -379,9 +483,10 @@ export default function Solicitacoes() {
             <thead className="bg-[#161616] border-b border-[#222] text-[10px] uppercase text-gray-500">
               <tr>
                 <th className="p-4">Colaborador</th>
-                <th className="p-4 text-center">Dias</th>
+                <th className="p-4 text-center">Dias / Período</th>
                 <th className="p-4 text-center">Decisão em / Por</th>
-                <th className="p-4 text-right">Status</th>
+                <th className="p-4 text-center">Status</th>
+                <th className="p-4 text-right">Ação</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#222]">
@@ -394,7 +499,7 @@ export default function Solicitacoes() {
                 .map((item) => (
                   <tr
                     key={item.id}
-                    className="hover:bg-[#141414] text-sm group"
+                    className="hover:bg-[#141414] text-sm group transition-colors"
                   >
                     <td className="p-4">
                       <p className="font-bold uppercase leading-none">
@@ -404,8 +509,14 @@ export default function Solicitacoes() {
                         {item.colaboradores?.setor || "-"}
                       </p>
                     </td>
-                    <td className="p-4 text-center font-mono text-gray-400">
-                      {item.total_dias || 0}d
+                    <td className="p-4 text-center">
+                      <p className="font-mono text-gray-300 font-bold">
+                        {item.total_dias || 0}d
+                      </p>
+                      <p className="text-[9px] text-gray-600 font-bold tracking-wider mt-1">
+                        {formatarDataSegura(item.data_inicio)} à{" "}
+                        {formatarDataSegura(item.data_fim)}
+                      </p>
                     </td>
                     <td className="p-4 text-center">
                       <p className="text-[10px] text-gray-300 font-bold">
@@ -415,27 +526,46 @@ export default function Solicitacoes() {
                         {item.aprovado_por || "SISTEMA"}
                       </p>
                     </td>
-                    <td className="p-4 text-right">
+                    <td className="p-4 text-center">
                       <span
-                        className={`text-[9px] font-black px-2 py-1 rounded border uppercase ${item.status === "Aprovada" ? "border-green-900/50 text-green-500" : "border-red-900/50 text-red-500"}`}
+                        className={`text-[9px] font-black px-2 py-1 rounded border uppercase tracking-widest ${item.status === "Aprovada" ? "border-green-900/50 text-green-500 bg-green-900/10" : "border-red-900/50 text-red-500 bg-red-900/10"}`}
                       >
                         {item.status}
                       </span>
+                    </td>
+                    <td className="p-4 text-right">
+                      {/* Botão de Excluir no Histórico */}
+                      <button
+                        onClick={() => excluirSolicitacao(item.id)}
+                        className="p-2 text-gray-600 hover:text-red-500 transition-colors inline-block"
+                        title="Apagar Registro"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </td>
                   </tr>
                 ))}
             </tbody>
           </table>
+          {historico.length === 0 && (
+            <div className="p-8 text-center text-gray-500 text-xs font-bold uppercase tracking-widest">
+              Nenhum histórico encontrado.
+            </div>
+          )}
         </div>
       </section>
 
-      {/* Modais */}
+      {/* ========================================== */}
+      {/* MODAIS */}
+      {/* ========================================== */}
+
+      {/* Modal: Nova Solicitação */}
       {modalNovoAberto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
           <div className="bg-[#111] border border-[#222] rounded-3xl w-full max-w-md p-8 relative">
             <button
               onClick={() => setModalNovoAberto(false)}
-              className="absolute right-6 top-6 text-gray-500"
+              className="absolute right-6 top-6 text-gray-500 hover:text-white transition-colors"
             >
               <X size={20} />
             </button>
@@ -446,7 +576,7 @@ export default function Solicitacoes() {
               <select
                 value={novoColabId}
                 onChange={(e) => setNovoColabId(e.target.value)}
-                className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-sm"
+                className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-sm outline-none focus:border-orange-500 transition-colors"
               >
                 <option value="">Selecione o Colaborador...</option>
                 {colaboradores.map((c) => (
@@ -460,19 +590,19 @@ export default function Solicitacoes() {
                   type="date"
                   value={novaDataInicio}
                   onChange={(e) => setNovaDataInicio(e.target.value)}
-                  className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-sm [color-scheme:dark]"
+                  className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-sm [color-scheme:dark] outline-none focus:border-orange-500"
                 />
                 <input
                   type="date"
                   value={novaDataFim}
                   onChange={(e) => setNovaDataFim(e.target.value)}
-                  className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-sm [color-scheme:dark]"
+                  className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-sm [color-scheme:dark] outline-none focus:border-orange-500"
                 />
               </div>
               <button
                 type="submit"
                 disabled={salvandoNova}
-                className="w-full bg-orange-600 py-4 rounded-xl font-black uppercase"
+                className="w-full bg-orange-600 hover:bg-orange-500 py-4 rounded-xl font-black uppercase tracking-widest transition-colors"
               >
                 {salvandoNova ? "Salvando..." : "Criar Solicitação"}
               </button>
@@ -481,12 +611,70 @@ export default function Solicitacoes() {
         </div>
       )}
 
+      {/* Modal: Editar Solicitação */}
+      {modalEditarAberto && solAtual && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
+          <div className="bg-[#111] border border-[#222] rounded-3xl w-full max-w-md p-8 relative shadow-2xl shadow-blue-900/10">
+            <button
+              onClick={() => setModalEditarAberto(false)}
+              className="absolute right-6 top-6 text-gray-500 hover:text-white transition-colors"
+            >
+              <X size={20} />
+            </button>
+            <h2 className="text-xl font-bold mb-2 flex items-center gap-2 text-blue-500">
+              <Edit size={20} /> Editar Solicitação
+            </h2>
+            <p className="text-xs text-gray-500 uppercase font-bold tracking-widest mb-6">
+              Colaborador:{" "}
+              <span className="text-gray-300">
+                {solAtual.colaboradores?.colaborador_nome}
+              </span>
+            </p>
+
+            <form onSubmit={salvarEdicao} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold uppercase ml-1 block mb-1">
+                    Data Início
+                  </label>
+                  <input
+                    type="date"
+                    value={editDataInicio}
+                    onChange={(e) => setEditDataInicio(e.target.value)}
+                    className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-sm [color-scheme:dark] outline-none focus:border-blue-500 transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold uppercase ml-1 block mb-1">
+                    Data Fim
+                  </label>
+                  <input
+                    type="date"
+                    value={editDataFim}
+                    onChange={(e) => setEditDataFim(e.target.value)}
+                    className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-sm [color-scheme:dark] outline-none focus:border-blue-500 transition-colors"
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                disabled={salvandoEdicao}
+                className="w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-xl font-black uppercase tracking-widest mt-2 transition-colors"
+              >
+                {salvandoEdicao ? "Atualizando..." : "Salvar Alterações"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Análise IA */}
       {modalAnaliseAberto && solAtual && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
-          <div className="bg-[#111] border border-[#222] rounded-3xl w-full max-w-lg p-8 relative">
+          <div className="bg-[#111] border border-[#222] rounded-3xl w-full max-w-lg p-8 relative shadow-2xl shadow-purple-900/10">
             <button
               onClick={() => setModalAnaliseAberto(false)}
-              className="absolute right-6 top-6 text-gray-500"
+              className="absolute right-6 top-6 text-gray-500 hover:text-white"
             >
               <X size={20} />
             </button>
@@ -497,7 +685,7 @@ export default function Solicitacoes() {
               <div className="space-y-4">
                 <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl">
                   <h3 className="text-xs font-black text-red-500 uppercase mb-2">
-                    Conflitos:
+                    Conflitos Encontrados:
                   </h3>
                   <ul className="text-xs text-red-200 list-disc ml-4">
                     {resultadoAnalise.conflitos.map((c, i) => (
@@ -506,8 +694,11 @@ export default function Solicitacoes() {
                   </ul>
                 </div>
                 {resultadoAnalise.sugestao && (
-                  <div className="bg-purple-500/10 border border-purple-500/20 p-4 rounded-xl text-center">
-                    <p className="text-sm font-black text-purple-400">
+                  <div className="bg-purple-500/10 border border-purple-500/20 p-4 rounded-xl text-center mt-4">
+                    <p className="text-xs text-purple-300 font-bold uppercase mb-2">
+                      Datas Sugeridas (Sem conflitos):
+                    </p>
+                    <p className="text-lg font-black text-purple-400">
                       {formatarDataSegura(resultadoAnalise.sugestao.inicio)} —{" "}
                       {formatarDataSegura(resultadoAnalise.sugestao.fim)}
                     </p>
@@ -519,7 +710,7 @@ export default function Solicitacoes() {
                           "Sugestão automática",
                         )
                       }
-                      className="w-full bg-purple-600 mt-4 py-3 rounded-xl font-black text-xs uppercase"
+                      className="w-full bg-purple-600 hover:bg-purple-500 mt-4 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-colors"
                     >
                       Enviar Sugestão
                     </button>
@@ -527,19 +718,19 @@ export default function Solicitacoes() {
                 )}
               </div>
             ) : (
-              <div className="text-center">
+              <div className="text-center py-6">
                 <CheckCircle
-                  size={48}
+                  size={56}
                   className="text-green-500 mx-auto mb-4"
                 />
-                <p className="text-green-200 mb-6 font-bold">
-                  Solicitação aprovada!
+                <p className="text-green-200 mb-8 font-bold text-lg">
+                  Nenhum conflito encontrado!
                 </p>
                 <button
                   onClick={() => decidirSolicitacao(solAtual, "Aprovada")}
-                  className="w-full bg-green-600 py-4 rounded-xl font-black uppercase"
+                  className="w-full bg-green-600 hover:bg-green-500 py-4 rounded-xl font-black uppercase tracking-widest transition-colors"
                 >
-                  Aprovar Agora
+                  Aprovar Solicitação
                 </button>
               </div>
             )}

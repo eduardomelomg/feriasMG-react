@@ -112,22 +112,47 @@ export default function Solicitacoes() {
   };
 
   async function buscarDados() {
+    setCarregando(true);
+
+    // 1. Busca Solicitações (com try/catch isolado)
     try {
-      setCarregando(true);
       const { data: sols, error: errSols } = await supabase
         .from("solicitacoes")
         .select(
           `*, colaboradores (colaborador_nome, setor, email, saldo_ferias)`,
         )
         .order("created_at", { ascending: false });
-      if (errSols) throw errSols;
 
-      setPendentes(sols?.filter((s) => s.status === "Pendente") || []);
-      setHistorico(sols?.filter((s) => s.status !== "Pendente") || []);
+      if (errSols) {
+        console.error(
+          "Erro ao buscar solicitações (Verifique a coluna saldo_ferias):",
+          errSols.message,
+        );
+      } else {
+        setPendentes(sols?.filter((s) => s.status === "Pendente") || []);
+        setHistorico(sols?.filter((s) => s.status !== "Pendente") || []);
+      }
+    } catch (error) {
+      console.error("Erro fatal nas solicitações:", error);
+    }
 
-      const { data: colabs } = await supabase.from("colaboradores").select("*");
-      setColaboradores(colabs || []);
+    // 2. Busca Colaboradores (com try/catch isolado)
+    try {
+      const { data: colabs, error: errColabs } = await supabase
+        .from("colaboradores")
+        .select("*");
 
+      if (errColabs) {
+        console.error("Erro ao buscar colaboradores:", errColabs.message);
+      } else {
+        setColaboradores(colabs || []);
+      }
+    } catch (error) {
+      console.error("Erro fatal nos colaboradores:", error);
+    }
+
+    // 3. Busca Regras e Feriados
+    try {
       const { data: regras } = await supabase.from("regras_setor").select("*");
       setRegrasSetor(regras || []);
 
@@ -136,10 +161,10 @@ export default function Solicitacoes() {
         .select("*");
       setFeriados(feris || []);
     } catch (error) {
-      console.error("Erro ao buscar dados:", error.message);
-    } finally {
-      setCarregando(false);
+      console.error("Erro nas regras/feriados:", error);
     }
+
+    setCarregando(false);
   }
 
   useEffect(() => {

@@ -125,10 +125,7 @@ export default function Solicitacoes() {
       setPendentes(sols?.filter((s) => s.status === "Pendente") || []);
       setHistorico(sols?.filter((s) => s.status !== "Pendente") || []);
 
-      const { data: colabs } = await supabase
-        .from("colaboradores")
-        .select("*")
-        .eq("status", "ativo");
+      const { data: colabs } = await supabase.from("colaboradores").select("*");
       setColaboradores(colabs || []);
 
       const { data: regras } = await supabase.from("regras_setor").select("*");

@@ -417,13 +417,17 @@ export default function Colaboradores() {
                         <div className="col-span-1 text-center text-sm font-mono text-gray-400">
                           {colab.dias_direito}d
                         </div>
-                        <div className="col-span-1 text-center text-sm font-mono text-gray-400">
+
+                        {/* DIAS GOZADOS EM VERMELHO */}
+                        <div className="col-span-1 text-center text-sm font-bold font-mono text-red-500">
                           {colab.dias_gozados || 0}d
                         </div>
+
+                        {/* SALDO EM VERDE */}
                         <div className="col-span-2 text-center text-base font-black font-mono">
                           <span
                             className={
-                              aGozar < 0 ? "text-red-500" : "text-white"
+                              aGozar < 0 ? "text-red-600" : "text-green-500"
                             }
                           >
                             {aGozar}d

@@ -14,6 +14,7 @@ import {
   Filter,
   Mail,
   Briefcase,
+  Calculator,
 } from "lucide-react";
 import { differenceInMonths, parseISO, format } from "date-fns";
 
@@ -32,6 +33,7 @@ export default function Colaboradores() {
   const [dataAdmissao, setDataAdmissao] = useState("");
   const [diasDireito, setDiasDireito] = useState(30);
   const [diasGozados, setDiasGozados] = useState(0);
+  const [saldoFerias, setSaldoFerias] = useState(0); // NOVO CAMPO DE SALDO
 
   // --- ESTADOS DE EDIÇÃO ---
   const [modalEdicaoAberto, setModalEdicaoAberto] = useState(false);
@@ -42,6 +44,7 @@ export default function Colaboradores() {
   const [editDataAdmissao, setEditDataAdmissao] = useState("");
   const [editDiasDireito, setEditDiasDireito] = useState(30);
   const [editDiasGozados, setEditDiasGozados] = useState(0);
+  const [editSaldoFerias, setEditSaldoFerias] = useState(0); // NOVO CAMPO DE SALDO
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
 
   const listaSetores = [
@@ -109,6 +112,7 @@ export default function Colaboradores() {
         status: "ativo",
         dias_direito: parseInt(diasDireito),
         dias_gozados: parseInt(diasGozados),
+        saldo_ferias: parseInt(saldoFerias), // SALVANDO O SALDO NO BANCO
       },
     ]);
     if (error) alert(error.message);
@@ -118,6 +122,7 @@ export default function Colaboradores() {
       setDataAdmissao("");
       setDiasDireito(30);
       setDiasGozados(0);
+      setSaldoFerias(0);
       buscarColaboradores();
     }
   };
@@ -140,6 +145,7 @@ export default function Colaboradores() {
     setEditDataAdmissao(colab.data_admissao || "");
     setEditDiasDireito(colab.dias_direito ?? 30);
     setEditDiasGozados(colab.dias_gozados ?? 0);
+    setEditSaldoFerias(colab.saldo_ferias ?? 0); // CARREGANDO O SALDO NO MODAL
     setModalEdicaoAberto(true);
   };
 
@@ -155,6 +161,7 @@ export default function Colaboradores() {
         data_admissao: editDataAdmissao,
         dias_direito: parseInt(editDiasDireito),
         dias_gozados: parseInt(editDiasGozados),
+        saldo_ferias: parseInt(editSaldoFerias), // ATUALIZANDO O SALDO NO BANCO
       })
       .eq("id", colabEmEdicao.id);
     setSalvandoEdicao(false);
@@ -287,25 +294,47 @@ export default function Colaboradores() {
                 </option>
               ))}
             </select>
-            <div className="grid grid-cols-2 gap-4">
-              <input
-                type="number"
-                placeholder="Direito"
-                value={diasDireito}
-                onChange={(e) => setDiasDireito(e.target.value)}
-                className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none"
-              />
-              <input
-                type="number"
-                placeholder="Gozados"
-                value={diasGozados}
-                onChange={(e) => setDiasGozados(e.target.value)}
-                className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none"
-              />
+
+            {/* GRID DE DIAS E SALDO */}
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="text-[10px] text-gray-500 font-bold uppercase ml-1">
+                  Dir. CLT
+                </label>
+                <input
+                  type="number"
+                  value={diasDireito}
+                  onChange={(e) => setDiasDireito(e.target.value)}
+                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-500 font-bold uppercase ml-1">
+                  Gozados
+                </label>
+                <input
+                  type="number"
+                  value={diasGozados}
+                  onChange={(e) => setDiasGozados(e.target.value)}
+                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-orange-500 font-bold uppercase ml-1 flex items-center gap-1">
+                  <Calculator size={10} /> Saldo
+                </label>
+                <input
+                  type="number"
+                  value={saldoFerias}
+                  onChange={(e) => setSaldoFerias(e.target.value)}
+                  className="w-full bg-orange-500/10 border border-orange-500/30 rounded-lg p-3 text-orange-400 font-black text-sm outline-none"
+                />
+              </div>
             </div>
+
             <button
               type="submit"
-              className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3.5 rounded-lg transition-all shadow-lg shadow-orange-950/20 uppercase text-xs"
+              className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3.5 rounded-lg transition-all shadow-lg shadow-orange-950/20 uppercase text-xs mt-2"
             >
               Cadastrar
             </button>
@@ -347,12 +376,19 @@ export default function Colaboradores() {
           <div className="bg-[#111] border border-[#222] rounded-xl overflow-hidden shadow-2xl">
             <div className="p-4 bg-[#161616] border-b border-[#222]">
               <div className="grid grid-cols-12 gap-4 text-[10px] text-gray-500 font-black uppercase tracking-widest">
-                <div className="col-span-5">Colaborador / Detalhes</div>
+                <div className="col-span-4">Colaborador / Detalhes</div>
                 <div className="col-span-2 text-center">Status CLT</div>
-                <div className="col-span-1 text-center">Dir.</div>
-                <div className="col-span-1 text-center">Goz.</div>
-                <div className="col-span-2 text-center text-orange-500">
-                  Saldo
+                <div className="col-span-1 text-center" title="Direito CLT">
+                  Dir.
+                </div>
+                <div className="col-span-1 text-center" title="Gozados CLT">
+                  Goz.
+                </div>
+                <div className="col-span-1 text-center" title="A Gozar CLT">
+                  A Goz.
+                </div>
+                <div className="col-span-2 text-center text-orange-500 border-l border-[#333]">
+                  Saldo (Solicit.)
                 </div>
                 <div className="col-span-1 text-right">Ação</div>
               </div>
@@ -376,13 +412,15 @@ export default function Colaboradores() {
                   );
                   const aGozar =
                     (colab.dias_direito || 30) - (colab.dias_gozados || 0);
+                  const saldoAtual = colab.saldo_ferias || 0; // Pegando o saldo real do BD
+
                   return (
                     <div
                       key={colab.id}
                       className="p-5 hover:bg-[#141414] transition-colors group"
                     >
                       <div className="grid grid-cols-12 gap-4 items-center">
-                        <div className="col-span-5 flex items-center gap-4">
+                        <div className="col-span-4 flex items-center gap-4">
                           <div className="w-10 h-10 rounded-full bg-[#1a1a1a] flex items-center justify-center text-orange-500 font-bold border border-[#333] shrink-0 text-sm">
                             {colab.colaborador_nome.charAt(0)}
                           </div>
@@ -391,16 +429,12 @@ export default function Colaboradores() {
                               {colab.colaborador_nome}
                             </p>
                             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5">
-                              <p className="text-xs text-gray-400 flex items-center gap-1.5">
-                                <Mail size={14} className="text-gray-600" />{" "}
-                                {colab.email || "---"}
-                              </p>
-                              <p className="text-xs text-orange-500/90 font-black flex items-center gap-1.5 uppercase tracking-tighter">
-                                <Briefcase size={14} />{" "}
+                              <p className="text-[10px] text-orange-500/90 font-black flex items-center gap-1 uppercase tracking-tighter">
+                                <Briefcase size={12} />{" "}
                                 {obterSigla(colab.setor)}
                               </p>
-                              <p className="text-xs text-gray-500 flex items-center gap-1.5 font-bold">
-                                <CalendarIcon size={14} />{" "}
+                              <p className="text-[10px] text-gray-500 flex items-center gap-1 font-bold">
+                                <CalendarIcon size={12} />{" "}
                                 {colab.data_admissao
                                   ? format(
                                       parseISO(colab.data_admissao),
@@ -411,22 +445,36 @@ export default function Colaboradores() {
                             </div>
                           </div>
                         </div>
-                        <div className="col-span-2 text-center font-black uppercase text-[11px] tracking-tight">
-                          <span className={status.cor}>{status.label}</span>
+
+                        <div className="col-span-2 text-center font-black uppercase text-[10px] tracking-tight">
+                          <span
+                            className={`${status.cor} bg-black/40 px-2 py-1 rounded`}
+                          >
+                            {status.label}
+                          </span>
                         </div>
-                        <div className="col-span-1 text-center text-sm font-mono text-gray-400">
+
+                        <div className="col-span-1 text-center text-xs font-mono text-gray-400">
                           {colab.dias_direito}d
                         </div>
-                        <div className="col-span-1 text-center text-sm font-mono text-gray-400">
+
+                        <div className="col-span-1 text-center text-xs font-mono text-gray-400">
                           {colab.dias_gozados || 0}d
                         </div>
-                        <div className="col-span-2 text-center text-base font-black font-mono">
+
+                        <div className="col-span-1 text-center text-xs font-black font-mono">
                           <span
                             className={
-                              aGozar < 0 ? "text-red-500" : "text-white"
+                              aGozar < 0 ? "text-red-500" : "text-gray-300"
                             }
                           >
                             {aGozar}d
+                          </span>
+                        </div>
+
+                        <div className="col-span-2 text-center text-base font-black font-mono border-l border-[#333]">
+                          <span className="text-orange-500 bg-orange-500/10 px-3 py-1.5 rounded-lg border border-orange-500/20">
+                            {saldoAtual}d
                           </span>
                         </div>
 
@@ -500,20 +548,43 @@ export default function Colaboradores() {
                   </option>
                 ))}
               </select>
-              <div className="grid grid-cols-2 gap-4">
-                <input
-                  type="number"
-                  value={editDiasDireito}
-                  onChange={(e) => setEditDiasDireito(e.target.value)}
-                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none"
-                />
-                <input
-                  type="number"
-                  value={editDiasGozados}
-                  onChange={(e) => setEditDiasGozados(e.target.value)}
-                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none"
-                />
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold uppercase ml-1">
+                    Dir. CLT
+                  </label>
+                  <input
+                    type="number"
+                    value={editDiasDireito}
+                    onChange={(e) => setEditDiasDireito(e.target.value)}
+                    className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold uppercase ml-1">
+                    Gozados
+                  </label>
+                  <input
+                    type="number"
+                    value={editDiasGozados}
+                    onChange={(e) => setEditDiasGozados(e.target.value)}
+                    className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-orange-500 font-bold uppercase ml-1 flex items-center gap-1">
+                    <Calculator size={10} /> Saldo
+                  </label>
+                  <input
+                    type="number"
+                    value={editSaldoFerias}
+                    onChange={(e) => setEditSaldoFerias(e.target.value)}
+                    className="w-full bg-orange-500/10 border border-orange-500/30 rounded-lg p-3 text-orange-400 font-black text-sm outline-none"
+                  />
+                </div>
               </div>
+
               <button
                 type="submit"
                 disabled={salvandoEdicao}

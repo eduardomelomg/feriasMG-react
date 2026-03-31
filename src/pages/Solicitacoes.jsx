@@ -15,6 +15,7 @@ import {
   CalendarDays,
   Edit,
   Trash2,
+  Calculator,
 } from "lucide-react";
 import { format, parseISO, differenceInDays, addDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -52,6 +53,22 @@ export default function Solicitacoes() {
     conflitos: [],
     sugestao: null,
   });
+
+  // ==========================================
+  // LÓGICA DO MODAL (Cálculos de Saldo e Dias)
+  // ==========================================
+  const colabSelecionado = colaboradores.find((c) => c.id === novoColabId);
+  const saldoDisponivel = colabSelecionado
+    ? colabSelecionado.saldo_ferias || 0
+    : 0;
+
+  let diasCalculados = 0;
+  if (novaDataInicio && novaDataFim) {
+    diasCalculados =
+      differenceInDays(parseISO(novaDataFim), parseISO(novaDataInicio)) + 1;
+  }
+  const datasInvertidas = diasCalculados <= 0 && novaDataInicio && novaDataFim;
+  const saldoInsuficiente = diasCalculados > saldoDisponivel;
 
   // 🛡️ ESCUDO TITÂNIO
   const formatarDataSegura = (data, formato = "dd/MM/yy") => {
@@ -99,7 +116,9 @@ export default function Solicitacoes() {
       setCarregando(true);
       const { data: sols, error: errSols } = await supabase
         .from("solicitacoes")
-        .select(`*, colaboradores (colaborador_nome, setor, email)`)
+        .select(
+          `*, colaboradores (colaborador_nome, setor, email, saldo_ferias)`,
+        )
         .order("created_at", { ascending: false });
       if (errSols) throw errSols;
 
@@ -134,31 +153,38 @@ export default function Solicitacoes() {
   // FUNÇÕES DO CRUD
   // ==========================================
 
-  // CREATE (Criar)
   const salvarNovaSolicitacao = async (e) => {
     e.preventDefault();
     if (!novoColabId || !novaDataInicio || !novaDataFim)
       return alert("Preencha tudo!");
+    if (saldoInsuficiente) return alert("Saldo de férias insuficiente!");
+    if (datasInvertidas)
+      return alert("A data de fim não pode ser antes do início!");
+
     setSalvandoNova(true);
-    const dias =
-      differenceInDays(parseISO(novaDataFim), parseISO(novaDataInicio)) + 1;
 
     try {
-      const colab = colaboradores.find((c) => c.id === novoColabId);
       const { error } = await supabase.from("solicitacoes").insert([
         {
           colaborador_id: novoColabId,
-          colaborador_nome: colab?.colaborador_nome || "",
-          setor: colab?.setor || "",
+          colaborador_nome: colabSelecionado?.colaborador_nome || "",
+          setor: colabSelecionado?.setor || "",
           data_inicio: novaDataInicio,
           data_fim: novaDataFim,
-          total_dias: dias,
+          total_dias: diasCalculados,
           status: "Pendente",
           created_at: new Date().toISOString(),
         },
       ]);
       if (error) throw error;
+
       setModalNovoAberto(false);
+
+      // Limpar formulário
+      setNovoColabId("");
+      setNovaDataInicio("");
+      setNovaDataFim("");
+
       buscarDados();
     } catch (error) {
       alert("Erro ao criar: " + error.message);
@@ -167,7 +193,6 @@ export default function Solicitacoes() {
     }
   };
 
-  // UPDATE (Editar - Preparar Modal)
   const abrirModalEditar = (sol) => {
     setSolAtual(sol);
     setEditDataInicio(sol.data_inicio || "");
@@ -176,7 +201,6 @@ export default function Solicitacoes() {
     setModalEditarAberto(true);
   };
 
-  // UPDATE (Editar - Salvar no Banco)
   const salvarEdicao = async (e) => {
     e.preventDefault();
     if (!editDataInicio || !editDataFim)
@@ -186,6 +210,26 @@ export default function Solicitacoes() {
       differenceInDays(parseISO(editDataFim), parseISO(editDataInicio)) + 1;
 
     try {
+      // Regra de saldo se mudar o status na edição (Estorno ou Desconto)
+      if (editStatus !== solAtual.status) {
+        const { data: colab } = await supabase
+          .from("colaboradores")
+          .select("saldo_ferias")
+          .eq("id", solAtual.colaborador_id)
+          .single();
+        if (colab) {
+          let novoSaldo = colab.saldo_ferias || 0;
+          if (editStatus === "Aprovada") novoSaldo -= dias;
+          if (solAtual.status === "Aprovada" && editStatus !== "Aprovada")
+            novoSaldo += solAtual.total_dias; // Estorno
+
+          await supabase
+            .from("colaboradores")
+            .update({ saldo_ferias: novoSaldo })
+            .eq("id", solAtual.colaborador_id);
+        }
+      }
+
       const { error } = await supabase
         .from("solicitacoes")
         .update({
@@ -218,8 +262,7 @@ export default function Solicitacoes() {
     }
   };
 
-  // DELETE (Excluir)
-  const excluirSolicitacao = async (id) => {
+  const excluirSolicitacao = async (id, status, colabId, totalDias) => {
     if (
       !confirm(
         "Tem certeza que deseja EXCLUIR esta solicitação? Esta ação não pode ser desfeita.",
@@ -227,6 +270,22 @@ export default function Solicitacoes() {
     )
       return;
     try {
+      // Estorna o saldo se for excluída e estava aprovada
+      if (status === "Aprovada") {
+        const { data: colab } = await supabase
+          .from("colaboradores")
+          .select("saldo_ferias")
+          .eq("id", colabId)
+          .single();
+        if (colab) {
+          const saldoDevolvido = (colab.saldo_ferias || 0) + totalDias;
+          await supabase
+            .from("colaboradores")
+            .update({ saldo_ferias: saldoDevolvido })
+            .eq("id", colabId);
+        }
+      }
+
       const { error } = await supabase
         .from("solicitacoes")
         .delete()
@@ -238,10 +297,60 @@ export default function Solicitacoes() {
     }
   };
 
-  // ==========================================
-  // FUNÇÕES DE LÓGICA (Análise e Decisão)
-  // ==========================================
+  const decidirSolicitacao = async (sol, novoStatus, obs = null) => {
+    if (!confirm(`Deseja aplicar o status: ${novoStatus}?`)) return;
 
+    try {
+      // Lógica de Abater ou Estornar o Saldo de Férias via Código React
+      const { data: colab } = await supabase
+        .from("colaboradores")
+        .select("saldo_ferias")
+        .eq("id", sol.colaborador_id)
+        .single();
+
+      if (colab) {
+        let saldoAtualizado = colab.saldo_ferias || 0;
+
+        // Se aprovou, desconta do saldo
+        if (novoStatus === "Aprovada" && sol.status !== "Aprovada") {
+          saldoAtualizado -= sol.total_dias;
+        }
+        // Se estava aprovada e agora foi reprovada (ESTORNO)
+        else if (sol.status === "Aprovada" && novoStatus !== "Aprovada") {
+          saldoAtualizado += sol.total_dias;
+        }
+
+        // Atualiza a tabela de colaboradores
+        await supabase
+          .from("colaboradores")
+          .update({ saldo_ferias: saldoAtualizado })
+          .eq("id", sol.colaborador_id);
+      }
+
+      // Atualiza a solicitação
+      const { error } = await supabase
+        .from("solicitacoes")
+        .update({
+          status: novoStatus,
+          observacao: obs,
+          updated_at: new Date().toISOString(),
+          aprovado_por: usuarioLogado?.nome || "Sistema",
+          user_id: usuarioLogado?.id || null,
+        })
+        .eq("id", sol.id);
+
+      if (error) throw error;
+      enviarEmailNotificacao(sol, novoStatus, obs);
+
+      alert(`Sucesso! Status atualizado para ${novoStatus}.`);
+      setModalAnaliseAberto(false);
+      buscarDados();
+    } catch (error) {
+      alert("Erro ao processar: " + error.message);
+    }
+  };
+
+  // Funções de IA mantidas normais...
   const checarConflitos = (inicio, fim, setor) => {
     if (!inicio || !fim) return ["Datas da solicitação estão vazias."];
     let conflitos = [];
@@ -317,39 +426,6 @@ export default function Solicitacoes() {
       }
     }
     setResultadoAnalise({ conflitos, sugestao });
-  };
-
-  const decidirSolicitacao = async (sol, novoStatus, obs = null) => {
-    if (!confirm(`Deseja aplicar o status: ${novoStatus}?`)) return;
-
-    try {
-      const { error } = await supabase
-        .from("solicitacoes")
-        .update({
-          status: novoStatus,
-          observacao: obs,
-          updated_at: new Date().toISOString(),
-          aprovado_por: usuarioLogado?.nome || "Sistema",
-          user_id: usuarioLogado?.id || null,
-        })
-        .eq("id", sol.id);
-
-      if (error) throw error;
-      enviarEmailNotificacao(sol, novoStatus, obs);
-
-      if (novoStatus === "Aprovada") {
-        await supabase.rpc("abater_saldo_individual", {
-          id_colab: sol.colaborador_id,
-          dias: sol.total_dias,
-        });
-      }
-
-      alert(`Sucesso! Status atualizado para ${novoStatus}.`);
-      setModalAnaliseAberto(false);
-      buscarDados();
-    } catch (error) {
-      alert("Erro ao processar: " + error.message);
-    }
   };
 
   return (
@@ -448,7 +524,6 @@ export default function Solicitacoes() {
 
                   <div className="w-px h-8 bg-[#333] mx-1"></div>
 
-                  {/* BOTÃO ALTERAR (Lápis Azul) */}
                   <button
                     onClick={() => abrirModalEditar(sol)}
                     title="Alterar/Editar"
@@ -457,7 +532,14 @@ export default function Solicitacoes() {
                     <Edit size={16} />
                   </button>
                   <button
-                    onClick={() => excluirSolicitacao(sol.id)}
+                    onClick={() =>
+                      excluirSolicitacao(
+                        sol.id,
+                        sol.status,
+                        sol.colaborador_id,
+                        sol.total_dias,
+                      )
+                    }
                     title="Excluir"
                     className="h-10 w-10 flex items-center justify-center bg-gray-800 text-gray-500 hover:bg-red-900/40 hover:text-red-500 rounded-xl transition-colors"
                   >
@@ -546,7 +628,6 @@ export default function Solicitacoes() {
                       </span>
                     </td>
                     <td className="p-4 text-right">
-                      {/* BOTÃO ALTERAR (Lápis) NO HISTÓRICO */}
                       <button
                         onClick={() => abrirModalEditar(item)}
                         className="p-2 text-gray-600 hover:text-blue-500 transition-colors inline-block mr-2"
@@ -554,11 +635,17 @@ export default function Solicitacoes() {
                       >
                         <Edit size={16} />
                       </button>
-                      {/* BOTÃO EXCLUIR */}
                       <button
-                        onClick={() => excluirSolicitacao(item.id)}
+                        onClick={() =>
+                          excluirSolicitacao(
+                            item.id,
+                            item.status,
+                            item.colaborador_id,
+                            item.total_dias,
+                          )
+                        }
                         className="p-2 text-gray-600 hover:text-red-500 transition-colors inline-block"
-                        title="Apagar Registro"
+                        title="Apagar Registro e Estornar Saldo"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -576,10 +663,8 @@ export default function Solicitacoes() {
       </section>
 
       {/* ========================================== */}
-      {/* MODAIS */}
+      {/* MODAL NOVA SOLICITAÇÃO (Com Alerta de Saldo) */}
       {/* ========================================== */}
-
-      {/* Modal: Nova Solicitação */}
       {modalNovoAberto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
           <div className="bg-[#111] border border-[#222] rounded-3xl w-full max-w-md p-8 relative">
@@ -605,6 +690,7 @@ export default function Solicitacoes() {
                   </option>
                 ))}
               </select>
+
               <div className="grid grid-cols-2 gap-4">
                 <input
                   type="date"
@@ -619,10 +705,51 @@ export default function Solicitacoes() {
                   className="w-full bg-[#1a1a1a] border border-[#333] p-3 rounded-xl text-sm [color-scheme:dark] outline-none focus:border-orange-500"
                 />
               </div>
+
+              {/* PAINEL INTELIGENTE DE CÁLCULO */}
+              {novoColabId && novaDataInicio && novaDataFim && (
+                <div
+                  className={`p-4 rounded-xl border ${saldoInsuficiente || datasInvertidas ? "bg-red-900/10 border-red-900/50" : "bg-[#161616] border-[#333]"}`}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[10px] text-gray-400 font-bold uppercase">
+                      Saldo Atual
+                    </span>
+                    <span className="text-[10px] text-gray-400 font-bold uppercase">
+                      Desconto
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-lg font-black text-white">
+                      {saldoDisponivel}{" "}
+                      <span className="text-xs text-gray-500">dias</span>
+                    </span>
+                    <span
+                      className={`text-lg font-black ${saldoInsuficiente || datasInvertidas ? "text-red-500" : "text-orange-500"}`}
+                    >
+                      {diasCalculados}{" "}
+                      <span className="text-xs opacity-50">dias</span>
+                    </span>
+                  </div>
+
+                  {datasInvertidas && (
+                    <p className="text-[10px] text-red-500 font-bold uppercase flex items-center gap-1 mt-3">
+                      <AlertCircle size={14} /> Datas incorretas!
+                    </p>
+                  )}
+                  {saldoInsuficiente && !datasInvertidas && (
+                    <p className="text-[10px] text-red-500 font-bold uppercase flex items-center gap-1 mt-3">
+                      <AlertCircle size={14} /> Saldo insuficiente para o
+                      pedido!
+                    </p>
+                  )}
+                </div>
+              )}
+
               <button
                 type="submit"
-                disabled={salvandoNova}
-                className="w-full bg-orange-600 hover:bg-orange-500 py-4 rounded-xl font-black uppercase tracking-widest transition-colors"
+                disabled={salvandoNova || saldoInsuficiente || datasInvertidas}
+                className={`w-full py-4 rounded-xl font-black uppercase tracking-widest transition-colors mt-2 ${saldoInsuficiente || datasInvertidas ? "bg-gray-800 text-gray-500 cursor-not-allowed" : "bg-orange-600 hover:bg-orange-500 text-white"}`}
               >
                 {salvandoNova ? "Salvando..." : "Criar Solicitação"}
               </button>
@@ -652,7 +779,6 @@ export default function Solicitacoes() {
             </p>
 
             <form onSubmit={salvarEdicao} className="space-y-4">
-              {/* Alterar Status */}
               <div>
                 <label className="text-[10px] text-gray-500 font-bold uppercase ml-1 block mb-1">
                   Status Atual
@@ -668,7 +794,6 @@ export default function Solicitacoes() {
                 </select>
               </div>
 
-              {/* Alterar Datas */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] text-gray-500 font-bold uppercase ml-1 block mb-1">
@@ -697,7 +822,7 @@ export default function Solicitacoes() {
               <button
                 type="submit"
                 disabled={salvandoEdicao}
-                className="w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-xl font-black uppercase tracking-widest mt-2 transition-colors"
+                className="w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-xl font-black uppercase tracking-widest mt-2 transition-colors text-white"
               >
                 {salvandoEdicao ? "Atualizando..." : "Salvar Alterações"}
               </button>
@@ -748,7 +873,7 @@ export default function Solicitacoes() {
                           "Sugestão automática",
                         )
                       }
-                      className="w-full bg-purple-600 hover:bg-purple-500 mt-4 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-colors"
+                      className="w-full bg-purple-600 hover:bg-purple-500 mt-4 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-colors text-white"
                     >
                       Enviar Sugestão
                     </button>
@@ -766,7 +891,7 @@ export default function Solicitacoes() {
                 </p>
                 <button
                   onClick={() => decidirSolicitacao(solAtual, "Aprovada")}
-                  className="w-full bg-green-600 hover:bg-green-500 py-4 rounded-xl font-black uppercase tracking-widest transition-colors"
+                  className="w-full bg-green-600 hover:bg-green-500 py-4 rounded-xl font-black uppercase tracking-widest transition-colors text-white"
                 >
                   Aprovar Solicitação
                 </button>

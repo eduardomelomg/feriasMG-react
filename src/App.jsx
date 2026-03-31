@@ -59,7 +59,7 @@ function EstruturaBase() {
               path="/usuarios"
               element={
                 usuarioLogado.perfil === "Admin TI" ||
-                usuarioLogado.perfil === "ADMINISTRADOR (TI)" ||
+                usuarioLogado.perfil === "Administrador (TI)" || // <-- AQUI ESTAVA O ERRO!
                 usuarioLogado.perfil === "Gestão DP" ? (
                   <Usuarios />
                 ) : (

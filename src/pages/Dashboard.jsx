@@ -21,42 +21,50 @@ export default function Dashboard() {
   const [recentes, setRecentes] = useState([]);
   const [setoresData, setSetoresData] = useState([]);
 
-  // 🛡️ ESCUDO TITÂNIO CONTRA DATAS VAZIAS
+  // 🛡️ ESCUDO TITÂNIO (SEM ERROS DE VARIÁVEL NÃO USADA)
   const formatarDataSegura = (data) => {
     if (!data) return "---";
     try {
       const dateObj =
         typeof data === "string" ? parseISO(data) : new Date(data);
       return format(dateObj, "dd/MM/yyyy", { locale: ptBR });
-    } catch (err) {
-      console.warn("Erro ao formatar data no dashboard:", err);
+    } catch (erroData) {
+      console.warn("Erro ao formatar data:", erroData); // <-- Variável usada aqui!
       return "Data Inválida";
     }
   };
 
   useEffect(() => {
     const carregarDashboard = async () => {
-      console.log("Dashboard: Carregando dados iniciais...");
-
-      // 1. Buscar Solicitações
+      // 1. BUSCAR SOLICITAÇÕES
       const { data: solicitacoes, error: errSoli } = await supabase
         .from("solicitacoes")
-        .select("status, colaborador_nome, data_inicio, data_fim");
+        .select("*, colaboradores(colaborador_nome, setor)")
+        .order("created_at", { ascending: true });
 
       if (errSoli) {
-        console.error("Erro ao carregar solicitações:", errSoli.message);
+        console.error("Erro ao carregar solicitações:", errSoli.message); // <-- Usado
       } else if (solicitacoes) {
-        // Correção das nomenclaturas exatas salvas no banco
         setStats({
-          pendentes: solicitacoes.filter((s) => s.status === "Pendente").length,
-          aprovadas: solicitacoes.filter((s) => s.status === "Aprovada").length,
-          rejeitadas: solicitacoes.filter((s) => s.status === "Reprovada")
-            .length,
+          pendentes: solicitacoes.filter(
+            (s) => s.status?.toLowerCase() === "pendente",
+          ).length,
+          aprovadas: solicitacoes.filter(
+            (s) => s.status?.toLowerCase() === "aprovada",
+          ).length,
+          rejeitadas: solicitacoes.filter(
+            (s) =>
+              s.status?.toLowerCase() === "reprovada" ||
+              s.status?.toLowerCase() === "rejeitada",
+          ).length,
         });
 
         const formatados = solicitacoes.map((s) => ({
-          nome: s.colaborador_nome || "Desconhecido",
-          setor: "Não informado", // Texto fixo enquanto não trouxer do banco
+          nome:
+            s.colaboradores?.colaborador_nome ||
+            s.colaborador_nome ||
+            "Desconhecido",
+          setor: s.colaboradores?.setor || s.setor || "Não informado",
           data_inicio: s.data_inicio,
           data_fim: s.data_fim,
           status: s.status || "Pendente",
@@ -65,13 +73,13 @@ export default function Dashboard() {
         setRecentes(formatados.slice(-3).reverse());
       }
 
-      // 2. Buscar Colaboradores (Ocupação por Setor)
+      // 2. BUSCAR COLABORADORES
       const { data: colaboradores, error: errColab } = await supabase
         .from("colaboradores")
         .select("setor, status");
 
       if (errColab) {
-        console.warn("Aviso: Tabela 'colaboradores' não encontrada.");
+        console.warn("Aviso colaboradores:", errColab.message); // <-- Usado
       } else if (colaboradores) {
         setSetoresData(colaboradores);
       }
@@ -79,16 +87,13 @@ export default function Dashboard() {
 
     carregarDashboard();
 
-    // --- CONFIGURAÇÃO DO REALTIME ---
+    // Atualização em tempo real
     const canal = supabase
       .channel("dashboard-changes")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "solicitacoes" },
-        (payload) => {
-          console.log("Dashboard: Mudança detectada!", payload);
-          carregarDashboard();
-        },
+        () => carregarDashboard(),
       )
       .subscribe();
 
@@ -144,14 +149,12 @@ export default function Dashboard() {
     return { ...setor, ocupados, total: totalNoSetor };
   });
 
-  // Data atual dinâmica para o cabeçalho
   const dataHoje = format(new Date(), "EEEE, dd 'de' MMMM 'de' yyyy", {
     locale: ptBR,
   });
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      {/* Cabeçalho do Dashboard */}
       <div className="flex justify-between items-end mb-8">
         <div>
           <h1 className="text-2xl text-white font-bold mb-1">
@@ -166,7 +169,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Cards de KPI */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         {kpis.map((kpi, index) => (
           <div
@@ -186,9 +188,7 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Seção Inferior: Ocupação e Recentes */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Card: Ocupação por Setor */}
         <div className="bg-[#111111] border border-[#222] rounded-xl p-6">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-white font-semibold flex items-center gap-2 text-sm">
@@ -220,7 +220,6 @@ export default function Dashboard() {
                       {setor.ocupados}/{setor.total} ({txtPorcentagem})
                     </span>
                   </div>
-                  {/* Barra de progresso */}
                   <div className="w-full bg-[#1a1a1a] rounded-full h-1.5 mt-1">
                     <div
                       className="bg-orange-500 h-1.5 rounded-full transition-all duration-500"
@@ -233,7 +232,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Card: Solicitações Recentes */}
         <div className="bg-[#111111] border border-[#222] rounded-xl p-6">
           <h2 className="text-white font-semibold flex items-center gap-2 text-sm mb-6">
             <History size={18} className="text-orange-500" />
@@ -241,18 +239,24 @@ export default function Dashboard() {
           </h2>
 
           {recentes.length === 0 ? (
-            <p className="text-center text-gray-500 text-xs py-4">
-              Nenhuma solicitação recente.
+            <p className="text-center text-gray-500 text-xs py-4 uppercase font-bold tracking-widest">
+              Nenhuma solicitação sincronizada.
             </p>
           ) : (
             recentes.map((solicitacao, index) => {
-              // Lógica de cores baseada no nome exato salvo no banco
+              const statusFormatado =
+                solicitacao.status.charAt(0).toUpperCase() +
+                solicitacao.status.slice(1).toLowerCase();
+
               let corPill = "border-gray-900 text-gray-500 bg-gray-900/20";
-              if (solicitacao.status === "Pendente")
+              if (statusFormatado === "Pendente")
                 corPill = "border-yellow-900 text-yellow-500 bg-yellow-900/20";
-              if (solicitacao.status === "Aprovada")
+              if (statusFormatado === "Aprovada")
                 corPill = "border-green-900 text-green-500 bg-green-900/20";
-              if (solicitacao.status === "Reprovada")
+              if (
+                statusFormatado === "Reprovada" ||
+                statusFormatado === "Rejeitada"
+              )
                 corPill = "border-red-900 text-red-500 bg-red-900/20";
 
               return (
@@ -261,14 +265,14 @@ export default function Dashboard() {
                   className="flex items-center justify-between p-3 hover:bg-[#1a1a1a] rounded-lg transition-colors border border-transparent hover:border-[#333] cursor-pointer mb-2"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-orange-500/20 text-orange-500 flex items-center justify-center font-bold text-sm shrink-0">
+                    <div className="w-10 h-10 rounded-full bg-[#1a1a1a] border border-[#333] text-orange-500 flex items-center justify-center font-black text-sm shrink-0">
                       {solicitacao.nome?.charAt(0)}
                     </div>
                     <div>
-                      <p className="text-white text-sm font-medium">
+                      <p className="text-white text-sm font-bold uppercase">
                         {solicitacao.nome}
                       </p>
-                      <p className="text-[11px] text-gray-500 mt-0.5">
+                      <p className="text-[10px] text-gray-500 mt-0.5 font-bold tracking-wider uppercase">
                         {solicitacao.setor} •{" "}
                         {formatarDataSegura(solicitacao.data_inicio)} —{" "}
                         {formatarDataSegura(solicitacao.data_fim)}
@@ -276,9 +280,9 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <span
-                    className={`px-2 py-1 rounded text-[10px] font-black uppercase border tracking-wider ${corPill}`}
+                    className={`px-2 py-1 rounded text-[9px] font-black uppercase border tracking-widest ${corPill}`}
                   >
-                    {solicitacao.status}
+                    {statusFormatado}
                   </span>
                 </div>
               );

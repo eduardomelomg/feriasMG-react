@@ -54,13 +54,12 @@ function EstruturaBase() {
             <Route path="/solicitacoes" element={<Solicitacoes />} />
             <Route path="/colaboradores" element={<Colaboradores />} />
 
-            {/* Rota de Gestão de Usuários (Proteção extra via Rota) */}
+            {/* Rota de Gestão de Usuários (Proteção extra via Rota BLINDADA) */}
             <Route
               path="/usuarios"
               element={
-                usuarioLogado.perfil === "Admin TI" ||
-                usuarioLogado.perfil === "Administrador (TI)" || // <-- AQUI ESTAVA O ERRO!
-                usuarioLogado.perfil === "Gestão DP" ? (
+                usuarioLogado?.perfil &&
+                String(usuarioLogado.perfil).toUpperCase().includes("ADMIN") ? (
                   <Usuarios />
                 ) : (
                   <Navigate to="/" />

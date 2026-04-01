@@ -420,7 +420,7 @@ export default function Colaboradores() {
                 htmlFor="feriasVencidas"
                 className="text-xs text-red-400 font-semibold cursor-pointer select-none"
               >
-                Marcar como "Férias Vencidas" (Dobra)
+                Marcar como "Férias Vencidas"
               </label>
             </div>
 
@@ -651,7 +651,7 @@ export default function Colaboradores() {
                 </div>
                 <div>
                   <label className="text-[10px] text-gray-500 font-bold uppercase ml-1 block mb-1">
-                    Últimas Férias
+                    Início do Período Aquisitivo
                   </label>
                   <input
                     type="date"
@@ -701,7 +701,7 @@ export default function Colaboradores() {
                   htmlFor="editFeriasVencidas"
                   className="text-xs text-red-400 font-semibold cursor-pointer select-none"
                 >
-                  Marcar como "Férias Vencidas" (Dobra)
+                  Marcar como "Férias Vencidas"
                 </label>
               </div>
 

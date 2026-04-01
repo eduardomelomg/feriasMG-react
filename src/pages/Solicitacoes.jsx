@@ -859,8 +859,8 @@ export default function Solicitacoes() {
 
               <button
                 type="submit"
-                disabled={salvandoNova || datasInvertidas}
-                className={`w-full py-4 rounded-xl font-black uppercase tracking-widest transition-colors mt-2 ${datasInvertidas || salvandoNova ? "bg-gray-800 text-gray-500 cursor-not-allowed" : "bg-orange-600 hover:bg-orange-500 text-white"}`}
+                disabled={salvandoNova || datasInvertidas || saldoInsuficiente}
+                className={`w-full py-4 rounded-xl font-black uppercase tracking-widest transition-colors mt-2 ${datasInvertidas || saldoInsuficiente || salvandoNova ? "bg-gray-800 text-gray-500 cursor-not-allowed" : "bg-orange-600 hover:bg-orange-500 text-white"}`}
               >
                 {salvandoNova ? "Enviando E-mail..." : "Criar Solicitação"}
               </button>

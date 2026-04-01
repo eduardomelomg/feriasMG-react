@@ -46,11 +46,21 @@ export default function Colaboradores() {
 
   const listaSetores = [
     "Contábil",
+    "Coordenador Contábil",
     "Departamento Pessoal",
+    "Coordenador DP",
     "Financeiro",
+    "Coordenador Financeiro",
     "Fiscal",
+    "Coordenador Fiscal",
     "Recursos Humanos",
+    "Coordenador RH",
     "Tecnologia da Informação",
+    "Coordenador TI",
+    "Diretoria",
+    "Gerência",
+    "Comercial",
+    "Operacional",
   ];
 
   async function buscarColaboradores() {
@@ -127,15 +137,23 @@ export default function Colaboradores() {
   };
 
   const obterSigla = (setor) => {
+    if (!setor) return "---";
+
+    // Se for qualquer cargo de coordenação, crava a sigla COORD
+    if (setor.toLowerCase().includes("coordenador")) return "COORD";
+
     const siglas = {
-      "Tecnologia da Informação": "TI",
-      "Departamento Pessoal": "DP",
+      TecnologiadaInformação: "TI",
+      DepartamentoPessoal: "DP",
       Financeiro: "FIN",
       Fiscal: "FISC",
       Contábil: "CONT",
-      "Recursos Humanos": "RH",
+      RecursosHumanos: "RH",
+      Diretoria: "DIR",
     };
-    return siglas[setor] || setor;
+
+    // Se não achar na lista, pega as 4 primeiras letras para não quebrar o layout
+    return siglas[setor] || setor.substring(0, 4).toUpperCase();
   };
 
   const cadastrarColaborador = async (e) => {

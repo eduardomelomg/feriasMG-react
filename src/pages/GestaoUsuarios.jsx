@@ -19,7 +19,7 @@ export default function GestaoUsuarios() {
   // --- Estados do Form de CADASTRO ---
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
-  const [perfil, setPerfil] = useState("Gestor de Setor");
+  const [perfil, setPerfil] = useState("Gestor");
   const [setor, setSetor] = useState("Contábil");
 
   // --- Estados do Modal de EDIÇÃO ---
@@ -32,21 +32,28 @@ export default function GestaoUsuarios() {
   const [editStatus, setEditStatus] = useState("ativo");
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
 
-  const listaPerfis = [
-    "Administrador (TI)",
-    "Coordenador (DP)",
-    "Gestor do DP",
-    "Analista (RH)",
-  ];
+  const listaPerfis = ["Administrador", "Coordenador", "Gestor", "Analista"];
 
+  // A LISTA VIP DE SETORES E CARGOS
   const listaSetores = [
-    "Todos (Global)", // Para Admins e DP
+    "Todos (Global)",
     "Contábil",
+    "Coordenador Contábil",
     "Departamento Pessoal",
+    "Coordenador DP",
     "Financeiro",
+    "Coordenador Financeiro",
     "Fiscal",
+    "Coordenador Fiscal",
     "Recursos Humanos",
+    "Coordenador RH",
     "Tecnologia da Informação",
+    "Coordenador TI",
+    "Administrador TI",
+    "Diretoria",
+    "Gerência",
+    "Comercial",
+    "Operacional",
   ];
 
   // --- 1. BUSCAR USUÁRIOS ---
@@ -71,29 +78,68 @@ export default function GestaoUsuarios() {
     buscarUsuarios();
   }, []);
 
-  // --- 2. CADASTRAR USUÁRIO ---
+  // --- 2. CADASTRAR USUÁRIO (COM GATILHO DUPLO) ---
   const cadastrarUsuario = async (e) => {
     e.preventDefault();
     if (!nome || !email) return alert("Nome e e-mail são obrigatórios!");
 
-    const { error } = await supabase.from("usuarios_sistema").insert([
-      {
-        nome,
-        email,
-        perfil,
-        setor,
-        status: "ativo",
-      },
-    ]);
+    try {
+      // 1º Gatilho: Salvar na tabela de acessos do sistema
+      const { error: errUser } = await supabase
+        .from("usuarios_sistema")
+        .insert([
+          {
+            nome,
+            email,
+            perfil,
+            setor,
+            status: "ativo",
+          },
+        ]);
 
-    if (error) {
-      if (error.code === "23505")
-        alert("Este e-mail já está cadastrado no sistema!");
-      else alert("Erro ao cadastrar: " + error.message);
-    } else {
+      if (errUser) {
+        if (errUser.code === "23505") {
+          return alert("Este e-mail já está cadastrado no sistema!");
+        }
+        throw errUser;
+      }
+
+      // 2º Gatilho: Criar automaticamente a ficha na tabela de colaboradores
+      // Se ele for de "Todos (Global)", jogamos na Diretoria para não bugar o outro painel
+      const setorColaborador = setor === "Todos (Global)" ? "Diretoria" : setor;
+      const dataHoje = new Date().toISOString().split("T")[0]; // Data atual YYYY-MM-DD
+
+      const { error: errColab } = await supabase.from("colaboradores").insert([
+        {
+          colaborador_nome: nome,
+          email: email,
+          setor: setorColaborador,
+          data_admissao: dataHoje, // Preenche hoje por padrão
+          status: "ativo",
+          dias_direito: 30, // 30 dias por padrão
+          dias_gozados: 0,
+        },
+      ]);
+
+      if (errColab) {
+        console.error(
+          "Aviso: Acesso gerado, mas falha ao criar ficha de colaborador.",
+          errColab.message,
+        );
+        alert(
+          "Acesso gerado com sucesso! Mas não foi possível criar a ficha de férias automaticamente.",
+        );
+      } else {
+        alert(
+          "Sucesso! Usuário criado E ficha de colaborador gerada com 30 dias de direito.",
+        );
+      }
+
       setNome("");
       setEmail("");
       buscarUsuarios();
+    } catch (error) {
+      alert("Erro geral ao cadastrar: " + error.message);
     }
   };
 
@@ -245,8 +291,8 @@ export default function GestaoUsuarios() {
             <div className="bg-orange-500/10 border border-orange-500/20 p-3 rounded-lg mt-4 flex gap-3 items-start">
               <Lock size={16} className="text-orange-500 shrink-0 mt-0.5" />
               <p className="text-xs text-orange-500/80 leading-relaxed">
-                Este e-mail será usado para liberar o acesso ao painel via Login
-                do Google futuramente.
+                Atenção: Ao conceder acesso, uma ficha de colaborador com 30
+                dias de férias também será gerada.
               </p>
             </div>
 

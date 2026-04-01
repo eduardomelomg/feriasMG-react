@@ -30,6 +30,8 @@ export default function Colaboradores() {
   const [email, setEmail] = useState("");
   const [setor, setSetor] = useState("Contábil");
   const [dataAdmissao, setDataAdmissao] = useState("");
+  const [dataUltimasFerias, setDataUltimasFerias] = useState("");
+  const [feriasVencidas, setFeriasVencidas] = useState(false);
   const [diasDireito, setDiasDireito] = useState(30);
   const [diasGozados, setDiasGozados] = useState(0);
 
@@ -40,34 +42,47 @@ export default function Colaboradores() {
   const [editEmail, setEditEmail] = useState("");
   const [editSetor, setEditSetor] = useState("");
   const [editDataAdmissao, setEditDataAdmissao] = useState("");
+  const [editDataUltimasFerias, setEditDataUltimasFerias] = useState("");
+  const [editFeriasVencidas, setEditFeriasVencidas] = useState(false);
   const [editDiasDireito, setEditDiasDireito] = useState(30);
   const [editDiasGozados, setEditDiasGozados] = useState(0);
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
 
   const listaSetores = [
     "Contábil",
-    "Coordenador Contábil",
     "Departamento Pessoal",
-    "Coordenador DP",
     "Financeiro",
-    "Coordenador Financeiro",
     "Fiscal",
-    "Coordenador Fiscal",
     "Recursos Humanos",
-    "Coordenador RH",
     "Tecnologia da Informação",
-    "Coordenador TI",
-    "Diretoria",
-    "Gerência",
-    "Comercial",
-    "Operacional",
   ];
+
+  // ==========================================
+  // LÓGICA DE AUTO-CHECKBOX (FÉRIAS VENCIDAS)
+  // ==========================================
+  useEffect(() => {
+    // Para o cadastro:
+    const dataRef = dataUltimasFerias || dataAdmissao;
+    if (dataRef) {
+      const meses = differenceInMonths(new Date(), parseISO(dataRef));
+      setFeriasVencidas(meses >= 23); // Marca automático se >= 23 meses
+    } else {
+      setFeriasVencidas(false);
+    }
+  }, [dataAdmissao, dataUltimasFerias]);
+
+  useEffect(() => {
+    // Para a edição:
+    const dataRef = editDataUltimasFerias || editDataAdmissao;
+    if (dataRef) {
+      const meses = differenceInMonths(new Date(), parseISO(dataRef));
+      setEditFeriasVencidas(meses >= 23);
+    }
+  }, [editDataAdmissao, editDataUltimasFerias]);
 
   async function buscarColaboradores() {
     try {
       setCarregando(true);
-
-      // 1. Busca todos os colaboradores
       const { data: colabs, error } = await supabase
         .from("colaboradores")
         .select("*")
@@ -75,18 +90,16 @@ export default function Colaboradores() {
 
       if (error) throw error;
 
-      // 2. Busca solicitações aprovadas para verificar o Reset de Ciclo
       const { data: aprovadas } = await supabase
         .from("solicitacoes")
         .select("colaborador_id, data_fim, status")
         .eq("status", "Aprovada");
 
       const hoje = new Date();
-      hoje.setHours(0, 0, 0, 0); // Zera a hora para comparar apenas o dia
+      hoje.setHours(0, 0, 0, 0);
 
       const colabsAtualizados = [...(colabs || [])];
 
-      // 3. Aplica o Reset Automaticamente se as férias terminaram
       if (aprovadas) {
         for (let i = 0; i < colabsAtualizados.length; i++) {
           const colab = colabsAtualizados[i];
@@ -98,17 +111,21 @@ export default function Colaboradores() {
           );
 
           if (feriasTerminadas) {
-            console.log(
-              `🔄 Resetando ciclo de ${colab.colaborador_nome} na tela de Colaboradores.`,
-            );
-            // Zera no banco
+            console.log(`🔄 Resetando ciclo de ${colab.colaborador_nome}`);
+            // Quando reseta o ciclo, salva a data do fim das férias como a última!
             await supabase
               .from("colaboradores")
-              .update({ dias_gozados: 0 })
+              .update({
+                dias_gozados: 0,
+                data_ultimas_ferias: feriasTerminadas.data_fim,
+                ferias_vencidas: false,
+              })
               .eq("id", colab.id);
 
-            // Zera na tela imediatamente
             colabsAtualizados[i].dias_gozados = 0;
+            colabsAtualizados[i].data_ultimas_ferias =
+              feriasTerminadas.data_fim;
+            colabsAtualizados[i].ferias_vencidas = false;
           }
         }
       }
@@ -125,47 +142,58 @@ export default function Colaboradores() {
     buscarColaboradores();
   }, []);
 
-  const obterStatusFerias = (dataAdm, gozados, direito = 30) => {
-    if (!dataAdm) return { label: "S/ DATA", cor: "text-gray-500" };
-    const meses = differenceInMonths(new Date(), parseISO(dataAdm));
-    const saldo = direito - (gozados || 0);
-    if (meses >= 23 && saldo > 0)
+  const obterStatusFerias = (colab) => {
+    const direito = colab.dias_direito ?? 30;
+    const gozados = colab.dias_gozados ?? 0;
+    const saldo = direito - gozados;
+
+    if (saldo <= 0) return { label: "EM DIA", cor: "text-green-500" };
+
+    // Se a caixinha foi marcada no banco, crava como vencida
+    if (colab.ferias_vencidas)
       return { label: "VENCIDA (DOBRA)", cor: "text-red-500" };
-    if (meses >= 18 && saldo > 0)
-      return { label: "EM ALERTA", cor: "text-yellow-500" };
+
+    const dataBase = colab.data_ultimas_ferias || colab.data_admissao;
+    if (!dataBase) return { label: "S/ DATA", cor: "text-gray-500" };
+
+    const meses = differenceInMonths(new Date(), parseISO(dataBase));
+    if (meses >= 23) return { label: "VENCIDA (DOBRA)", cor: "text-red-500" };
+    if (meses >= 18) return { label: "EM ALERTA", cor: "text-yellow-500" };
+
     return { label: "EM DIA", cor: "text-green-500" };
   };
 
   const obterSigla = (setor) => {
     if (!setor) return "---";
-
-    // Se for qualquer cargo de coordenação, crava a sigla COORD
-    if (setor.toLowerCase().includes("coordenador")) return "COORD";
+    const s = setor.toLowerCase();
+    if (s.includes("administrador") || s.includes("admin")) return "ADMIN";
+    if (s.includes("coordenador") || s.includes("coord")) return "COORD";
+    if (s.includes("diretor") || s.includes("diretoria")) return "DIR";
 
     const siglas = {
-      TecnologiadaInformação: "TI",
-      DepartamentoPessoal: "DP",
-      Financeiro: "FIN",
-      Fiscal: "FISC",
-      Contábil: "CONT",
-      RecursosHumanos: "RH",
-      Diretoria: "DIR",
+      "tecnologia da informação": "TI",
+      "departamento pessoal": "DP",
+      financeiro: "FIN",
+      fiscal: "FISC",
+      contábil: "CONT",
+      "recursos humanos": "RH",
     };
-
-    // Se não achar na lista, pega as 4 primeiras letras para não quebrar o layout
-    return siglas[setor] || setor.substring(0, 4).toUpperCase();
+    return siglas[s] || setor.substring(0, 4).toUpperCase();
   };
 
   const cadastrarColaborador = async (e) => {
     e.preventDefault();
     if (!nome || !email || !dataAdmissao)
       return alert("Preencha os campos obrigatórios!");
+
     const { error } = await supabase.from("colaboradores").insert([
       {
         colaborador_nome: nome,
         email,
         setor,
         data_admissao: dataAdmissao,
+        data_ultimas_ferias: dataUltimasFerias || null,
+        ferias_vencidas: feriasVencidas,
         status: "ativo",
         dias_direito: parseInt(diasDireito),
         dias_gozados: parseInt(diasGozados),
@@ -176,6 +204,8 @@ export default function Colaboradores() {
       setNome("");
       setEmail("");
       setDataAdmissao("");
+      setDataUltimasFerias("");
+      setFeriasVencidas(false);
       setDiasDireito(30);
       setDiasGozados(0);
       buscarColaboradores();
@@ -198,6 +228,8 @@ export default function Colaboradores() {
     setEditEmail(colab.email || "");
     setEditSetor(colab.setor);
     setEditDataAdmissao(colab.data_admissao || "");
+    setEditDataUltimasFerias(colab.data_ultimas_ferias || "");
+    setEditFeriasVencidas(colab.ferias_vencidas || false);
     setEditDiasDireito(colab.dias_direito ?? 30);
     setEditDiasGozados(colab.dias_gozados ?? 0);
     setModalEdicaoAberto(true);
@@ -213,11 +245,14 @@ export default function Colaboradores() {
         email: editEmail,
         setor: editSetor,
         data_admissao: editDataAdmissao,
+        data_ultimas_ferias: editDataUltimasFerias || null,
+        ferias_vencidas: editFeriasVencidas,
         dias_direito: parseInt(editDiasDireito),
         dias_gozados: parseInt(editDiasGozados),
       })
       .eq("id", colabEmEdicao.id);
     setSalvandoEdicao(false);
+
     if (error) alert(error.message);
     else {
       setModalEdicaoAberto(false);
@@ -226,11 +261,7 @@ export default function Colaboradores() {
   };
 
   const colaboradoresFiltrados = colaboradores.filter((colab) => {
-    const statusInfo = obterStatusFerias(
-      colab.data_admissao,
-      colab.dias_gozados,
-      colab.dias_direito,
-    );
+    const statusInfo = obterStatusFerias(colab);
     const nomeBate = colab.colaborador_nome
       ?.toLowerCase()
       .includes(busca.toLowerCase());
@@ -241,14 +272,10 @@ export default function Colaboradores() {
 
   const estatisticas = {
     vencidas: colaboradores.filter(
-      (c) =>
-        obterStatusFerias(c.data_admissao, c.dias_gozados).label ===
-        "VENCIDA (DOBRA)",
+      (c) => obterStatusFerias(c).label === "VENCIDA (DOBRA)",
     ).length,
     alerta: colaboradores.filter(
-      (c) =>
-        obterStatusFerias(c.data_admissao, c.dias_gozados).label ===
-        "EM ALERTA",
+      (c) => obterStatusFerias(c).label === "EM ALERTA",
     ).length,
     total: colaboradores.length,
   };
@@ -325,17 +352,32 @@ export default function Colaboradores() {
               onChange={(e) => setEmail(e.target.value)}
               className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none focus:border-orange-500 transition-all"
             />
-            <div className="grid grid-cols-1 gap-1">
-              <label className="text-[10px] text-gray-500 font-bold uppercase ml-1">
-                Admissão
-              </label>
-              <input
-                type="date"
-                value={dataAdmissao}
-                onChange={(e) => setDataAdmissao(e.target.value)}
-                className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none [color-scheme:dark]"
-              />
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-[10px] text-gray-500 font-bold uppercase ml-1 block mb-1">
+                  Admissão*
+                </label>
+                <input
+                  type="date"
+                  value={dataAdmissao}
+                  onChange={(e) => setDataAdmissao(e.target.value)}
+                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none [color-scheme:dark]"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-500 font-bold uppercase ml-1 block mb-1">
+                  Últimas Férias
+                </label>
+                <input
+                  type="date"
+                  value={dataUltimasFerias}
+                  onChange={(e) => setDataUltimasFerias(e.target.value)}
+                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none [color-scheme:dark]"
+                />
+              </div>
             </div>
+
             <select
               value={setor}
               onChange={(e) => setSetor(e.target.value)}
@@ -347,6 +389,7 @@ export default function Colaboradores() {
                 </option>
               ))}
             </select>
+
             <div className="grid grid-cols-2 gap-4">
               <input
                 type="number"
@@ -363,6 +406,24 @@ export default function Colaboradores() {
                 className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none"
               />
             </div>
+
+            {/* CAIXINHA DE FÉRIAS VENCIDAS */}
+            <div className="flex items-center gap-2 mt-2 p-3 bg-red-900/10 border border-red-900/30 rounded-lg">
+              <input
+                type="checkbox"
+                id="feriasVencidas"
+                checked={feriasVencidas}
+                onChange={(e) => setFeriasVencidas(e.target.checked)}
+                className="accent-red-500 w-4 h-4 cursor-pointer shrink-0"
+              />
+              <label
+                htmlFor="feriasVencidas"
+                className="text-xs text-red-400 font-semibold cursor-pointer select-none"
+              >
+                Marcar como "Férias Vencidas" (Dobra)
+              </label>
+            </div>
+
             <button
               type="submit"
               className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3.5 rounded-lg transition-all shadow-lg shadow-orange-950/20 uppercase text-xs"
@@ -429,11 +490,7 @@ export default function Colaboradores() {
                 </p>
               ) : (
                 colaboradoresFiltrados.map((colab) => {
-                  const status = obterStatusFerias(
-                    colab.data_admissao,
-                    colab.dias_gozados,
-                    colab.dias_direito,
-                  );
+                  const status = obterStatusFerias(colab);
                   const aGozar =
                     (colab.dias_direito || 30) - (colab.dias_gozados || 0);
                   return (
@@ -451,16 +508,19 @@ export default function Colaboradores() {
                               {colab.colaborador_nome}
                             </p>
                             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5">
-                              <p className="text-xs text-gray-400 flex items-center gap-1.5">
-                                <Mail size={14} className="text-gray-600" />{" "}
+                              <p className="text-[10px] text-gray-400 flex items-center gap-1.5">
+                                <Mail size={12} className="text-gray-600" />{" "}
                                 {colab.email || "---"}
                               </p>
-                              <p className="text-xs text-orange-500/90 font-black flex items-center gap-1.5 uppercase tracking-tighter">
-                                <Briefcase size={14} />{" "}
+                              <p className="text-[10px] text-orange-500/90 font-black flex items-center gap-1.5 uppercase tracking-tighter">
+                                <Briefcase size={12} />{" "}
                                 {obterSigla(colab.setor)}
                               </p>
-                              <p className="text-xs text-gray-500 flex items-center gap-1.5 font-bold">
-                                <CalendarIcon size={14} />{" "}
+                              <p
+                                className="text-[10px] text-gray-500 flex items-center gap-1.5 font-bold"
+                                title="Data Admissão"
+                              >
+                                <CalendarIcon size={12} />{" "}
                                 {colab.data_admissao
                                   ? format(
                                       parseISO(colab.data_admissao),
@@ -473,17 +533,27 @@ export default function Colaboradores() {
                         </div>
                         <div className="col-span-2 text-center font-black uppercase text-[11px] tracking-tight">
                           <span className={status.cor}>{status.label}</span>
+                          {colab.data_ultimas_ferias && (
+                            <p
+                              className="text-[9px] text-gray-600 mt-1 capitalize tracking-widest"
+                              title="Data das últimas férias tiradas"
+                            >
+                              Últ:{" "}
+                              {format(
+                                parseISO(colab.data_ultimas_ferias),
+                                "dd/MM/yy",
+                              )}
+                            </p>
+                          )}
                         </div>
                         <div className="col-span-1 text-center text-sm font-mono text-gray-400">
                           {colab.dias_direito}d
                         </div>
 
-                        {/* DIAS GOZADOS EM VERMELHO */}
                         <div className="col-span-1 text-center text-sm font-bold font-mono text-red-500">
                           {colab.dias_gozados || 0}d
                         </div>
 
-                        {/* SALDO EM VERDE */}
                         <div className="col-span-2 text-center text-base font-black font-mono">
                           <span
                             className={
@@ -494,7 +564,6 @@ export default function Colaboradores() {
                           </span>
                         </div>
 
-                        {/* Ações Visíveis Permanentemente */}
                         <div className="col-span-1 flex items-center justify-end gap-1">
                           <button
                             onClick={() => abrirModalEdicao(colab)}
@@ -547,12 +616,32 @@ export default function Colaboradores() {
                 onChange={(e) => setEditEmail(e.target.value)}
                 className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none"
               />
-              <input
-                type="date"
-                value={editDataAdmissao}
-                onChange={(e) => setEditDataAdmissao(e.target.value)}
-                className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none [color-scheme:dark]"
-              />
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold uppercase ml-1 block mb-1">
+                    Admissão
+                  </label>
+                  <input
+                    type="date"
+                    value={editDataAdmissao}
+                    onChange={(e) => setEditDataAdmissao(e.target.value)}
+                    className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none [color-scheme:dark]"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold uppercase ml-1 block mb-1">
+                    Últimas Férias
+                  </label>
+                  <input
+                    type="date"
+                    value={editDataUltimasFerias}
+                    onChange={(e) => setEditDataUltimasFerias(e.target.value)}
+                    className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none [color-scheme:dark]"
+                  />
+                </div>
+              </div>
+
               <select
                 value={editSetor}
                 onChange={(e) => setEditSetor(e.target.value)}
@@ -564,6 +653,7 @@ export default function Colaboradores() {
                   </option>
                 ))}
               </select>
+
               <div className="grid grid-cols-2 gap-4">
                 <input
                   type="number"
@@ -578,6 +668,23 @@ export default function Colaboradores() {
                   className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-3 text-white text-sm outline-none"
                 />
               </div>
+
+              <div className="flex items-center gap-2 mt-2 p-3 bg-red-900/10 border border-red-900/30 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="editFeriasVencidas"
+                  checked={editFeriasVencidas}
+                  onChange={(e) => setEditFeriasVencidas(e.target.checked)}
+                  className="accent-red-500 w-4 h-4 cursor-pointer shrink-0"
+                />
+                <label
+                  htmlFor="editFeriasVencidas"
+                  className="text-xs text-red-400 font-semibold cursor-pointer select-none"
+                >
+                  Marcar como "Férias Vencidas" (Dobra)
+                </label>
+              </div>
+
               <button
                 type="submit"
                 disabled={salvandoEdicao}

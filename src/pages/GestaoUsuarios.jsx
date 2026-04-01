@@ -19,6 +19,7 @@ export default function GestaoUsuarios() {
   // --- Estados do Form de CADASTRO ---
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
+  const [dataAdmissao, setDataAdmissao] = useState(""); // <-- O bom filho a casa torna!
   const [perfil, setPerfil] = useState("Gestor");
   const [setor, setSetor] = useState("Contábil");
 
@@ -36,7 +37,7 @@ export default function GestaoUsuarios() {
   const listaPerfis = ["Administrador", "Coordenador", "Gestor", "Analista"];
 
   const listaSetores = [
-    "Global", // Antigo "Todos"
+    "Global",
     "Contábil",
     "Departamento Pessoal",
     "Financeiro",
@@ -48,13 +49,12 @@ export default function GestaoUsuarios() {
     "Operacional",
   ];
 
-  // Função auxiliar para traduzir o nome do setor na hora de juntar com o cargo
   const obterNomeSetorCurto = (setorLongo) => {
     const traducoes = {
       "Departamento Pessoal": "DP",
       "Recursos Humanos": "RH",
       "Tecnologia da Informação": "TI",
-      Global: "", // Global não precisa aparecer no nome (Ex: Adminstrador)
+      Global: "",
     };
     return traducoes[setorLongo] !== undefined
       ? traducoes[setorLongo]
@@ -83,10 +83,11 @@ export default function GestaoUsuarios() {
     buscarUsuarios();
   }, []);
 
-  // --- 2. CADASTRAR USUÁRIO (COM GATILHO DUPLO INTELIGENTE) ---
+  // --- 2. CADASTRAR USUÁRIO (COM GATILHO DUPLO) ---
   const cadastrarUsuario = async (e) => {
     e.preventDefault();
-    if (!nome || !email) return alert("Nome e e-mail são obrigatórios!");
+    if (!nome || !email || !dataAdmissao)
+      return alert("Preencha Nome, E-mail e Data de Admissão!");
 
     try {
       // 1º Gatilho: Salvar o acesso
@@ -109,19 +110,16 @@ export default function GestaoUsuarios() {
         throw errUser;
       }
 
-      // 2º Gatilho: Criar a ficha do colaborador
-      // Junta o Perfil + Setor (Ex: Coordenador + TI = Coordenador TI)
+      // 2º Gatilho: Criar a ficha do colaborador com a data certa
       const nomeSetorCurto = obterNomeSetorCurto(setor);
       const cargoCombinado = `${perfil} ${nomeSetorCurto}`.trim();
-
-      const dataHoje = new Date().toISOString().split("T")[0];
 
       const { error: errColab } = await supabase.from("colaboradores").insert([
         {
           colaborador_nome: nome,
           email: email,
-          setor: cargoCombinado, // Salva o nome combinado perfeito
-          data_admissao: dataHoje,
+          setor: cargoCombinado,
+          data_admissao: dataAdmissao, // <-- Usando a data preenchida
           status: "ativo",
           dias_direito: 30,
           dias_gozados: 0,
@@ -138,12 +136,13 @@ export default function GestaoUsuarios() {
         );
       } else {
         alert(
-          "Sucesso! Usuário criado E ficha de colaborador gerada com 30 dias de direito.",
+          "Sucesso! Usuário criado E ficha de colaborador gerada com a admissão correta e 30 dias de direito.",
         );
       }
 
       setNome("");
       setEmail("");
+      setDataAdmissao("");
       buscarUsuarios();
     } catch (error) {
       alert("Erro geral ao cadastrar: " + error.message);
@@ -258,6 +257,19 @@ export default function GestaoUsuarios() {
               </div>
             </div>
 
+            {/* CAMPO DE ADMISSÃO RETORNOU AQUI */}
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">
+                DATA DE ADMISSÃO
+              </label>
+              <input
+                type="date"
+                value={dataAdmissao}
+                onChange={(e) => setDataAdmissao(e.target.value)}
+                className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-2.5 text-white text-sm focus:border-orange-500 outline-none [color-scheme:dark]"
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-3 pt-1">
               <div>
                 <label className="text-xs text-gray-500 block mb-1">
@@ -296,7 +308,7 @@ export default function GestaoUsuarios() {
             <div className="bg-orange-500/10 border border-orange-500/20 p-3 rounded-lg mt-4 flex gap-3 items-start">
               <Lock size={16} className="text-orange-500 shrink-0 mt-0.5" />
               <p className="text-xs text-orange-500/80 leading-relaxed">
-                Atenção: A ficha deste colaborador será gerada no setor: <br />
+                Atenção: A ficha de colaborador será gerada no setor: <br />
                 <strong className="text-orange-400">
                   "{perfil} {obterNomeSetorCurto(setor)}"
                 </strong>

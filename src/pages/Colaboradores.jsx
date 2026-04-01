@@ -367,7 +367,7 @@ export default function Colaboradores() {
               </div>
               <div>
                 <label className="text-[10px] text-gray-500 font-bold uppercase ml-1 block mb-1">
-                  Últimas Férias
+                  Início Período Aquisitivo
                 </label>
                 <input
                   type="date"

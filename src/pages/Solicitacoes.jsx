@@ -17,7 +17,13 @@ import {
   Trash2,
   Calculator,
 } from "lucide-react";
-import { format, parseISO, differenceInDays, addDays } from "date-fns";
+import {
+  format,
+  parseISO,
+  differenceInDays,
+  addDays,
+  isWithinInterval,
+} from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 export default function Solicitacoes() {
@@ -55,19 +61,46 @@ export default function Solicitacoes() {
   });
 
   // ==========================================
-  // LÓGICA DO MODAL (Usando a sua regra: Direito - Gozados)
+  // REGRA DE CÁLCULO LÍQUIDO (Desconta Feriados)
   // ==========================================
+  const calcularDiasLiquidos = (inicio, fim) => {
+    if (!inicio || !fim) return 0;
+    const dataIni = parseISO(inicio);
+    const dataFim = parseISO(fim);
+    let totalDias = 0;
+
+    let atual = dataIni;
+    while (atual <= dataFim) {
+      // Verifica se o dia atual é um feriado ou coletiva
+      const ehFeriado = feriados.some((f) => {
+        if (!f.data_inicio || !f.data_fim) return false;
+        const fIni = parseISO(f.data_inicio);
+        const fFim = parseISO(f.data_fim);
+        return isWithinInterval(atual, { start: fIni, end: fFim });
+      });
+
+      // Se NÃO for feriado, conta como dia de férias gasto
+      if (!ehFeriado) {
+        totalDias++;
+      }
+      atual = addDays(atual, 1);
+    }
+    return totalDias;
+  };
+
   const colabSelecionado = colaboradores.find((c) => c.id === novoColabId);
   const diasDireito = colabSelecionado?.dias_direito ?? 30;
   const diasGozados = colabSelecionado?.dias_gozados ?? 0;
   const saldoDisponivel = diasDireito - diasGozados;
 
-  let diasCalculados = 0;
-  if (novaDataInicio && novaDataFim) {
-    diasCalculados =
-      differenceInDays(parseISO(novaDataFim), parseISO(novaDataInicio)) + 1;
-  }
-  const datasInvertidas = diasCalculados <= 0 && novaDataInicio && novaDataFim;
+  // Calculando os dias usando a nova regra de feriados
+  const diasCalculados = calcularDiasLiquidos(novaDataInicio, novaDataFim);
+
+  // Verifica se o usuário digitou fim antes do início
+  const datasInvertidas =
+    novaDataInicio &&
+    novaDataFim &&
+    parseISO(novaDataInicio) > parseISO(novaDataFim);
   const saldoInsuficiente = diasCalculados > saldoDisponivel;
 
   // 🛡️ ESCUDO TITÂNIO
@@ -83,8 +116,10 @@ export default function Solicitacoes() {
     }
   };
 
-  const enviarEmailNotificacao = (sol, novoStatus, obs) => {
-    // Busca o e-mail tanto na relação quanto no objeto direto
+  // ==========================================
+  // FUNÇÃO DE E-MAIL COM ESPERA (AWAIT)
+  // ==========================================
+  const enviarEmailNotificacao = async (sol, novoStatus, obs) => {
     const emailDestino = sol.colaboradores?.email || sol.email;
     const nomeColab =
       sol.colaboradores?.colaborador_nome || sol.colaborador_nome;
@@ -100,63 +135,102 @@ export default function Solicitacoes() {
       status: novoStatus.toUpperCase(),
       data_inicio: formatarDataSegura(sol.data_inicio, "dd/MM/yyyy"),
       data_fimm: formatarDataSegura(sol.data_fim, "dd/MM/yyyy"),
-      observacao: obs || "Sua solicitação entrou em processamento.",
+      observacao: obs || "Sua solicitação está em andamento no sistema.",
       gestor_nome: usuarioLogado?.nome || "Gestão de RH",
     };
 
-    emailjs
-      .send(
+    try {
+      await emailjs.send(
         "service_11757ik",
         "template_rh69u4f",
         templateParams,
         "fsICO4HR_P76kh5R5",
-      )
-      .then(() => console.log(`E-mail de ${novoStatus} enviado!`))
-      .catch((err) => console.error("Erro ao enviar e-mail:", err));
+      );
+      console.log(`✅ E-mail de [${novoStatus}] enviado para ${emailDestino}!`);
+    } catch (err) {
+      console.error("❌ Erro ao enviar e-mail:", err);
+    }
+  };
+
+  // ==========================================
+  // RESET AUTOMÁTICO DE CICLO (Devolve os 30 dias)
+  // ==========================================
+  const verificarResetCiclo = async (
+    colaboradoresAtuais,
+    solicitacoesAtuais,
+  ) => {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0); // Zera as horas para comparar só o dia
+    let algumCicloResetado = false;
+
+    for (const colab of colaboradoresAtuais) {
+      const feriasTerminadas = solicitacoesAtuais.find(
+        (s) =>
+          s.colaborador_id === colab.id &&
+          s.status === "Aprovada" &&
+          parseISO(s.data_fim) < hoje &&
+          colab.dias_gozados > 0,
+      );
+
+      if (feriasTerminadas) {
+        console.log(
+          `🔄 Resetando ciclo de ${colab.colaborador_nome}. Férias terminaram em ${feriasTerminadas.data_fim}`,
+        );
+        await supabase
+          .from("colaboradores")
+          .update({ dias_gozados: 0 })
+          .eq("id", colab.id);
+
+        algumCicloResetado = true;
+      }
+    }
+    return algumCicloResetado;
   };
 
   async function buscarDados() {
     setCarregando(true);
 
-    // 1. Busca Solicitações
     try {
+      // 1. Busca Feriados primeiro (Importante para o cálculo)
+      const { data: feris } = await supabase
+        .from("feriados_coletivas")
+        .select("*");
+      setFeriados(feris || []);
+
+      // 2. Busca Solicitações
       const { data: sols, error: errSols } = await supabase
         .from("solicitacoes")
         .select(`*, colaboradores (colaborador_nome, setor, email)`)
         .order("created_at", { ascending: false });
 
-      if (!errSols) {
-        setPendentes(sols?.filter((s) => s.status === "Pendente") || []);
-        setHistorico(sols?.filter((s) => s.status !== "Pendente") || []);
-      }
-    } catch (error) {
-      console.error("Erro fatal nas solicitações:", error);
-    }
+      if (errSols) throw errSols;
+      setPendentes(sols?.filter((s) => s.status === "Pendente") || []);
+      setHistorico(sols?.filter((s) => s.status !== "Pendente") || []);
 
-    // 2. Busca Colaboradores (trazendo sua coluna dias_direito e dias_gozados)
-    try {
+      // 3. Busca Colaboradores
       const { data: colabs, error: errColabs } = await supabase
         .from("colaboradores")
         .select("*");
+      if (errColabs) throw errColabs;
 
-      if (!errColabs) {
+      // 4. Executa verificação do ciclo de férias
+      const precisaAtualizarTela = await verificarResetCiclo(colabs, sols);
+
+      // Se alguém teve o saldo zerado, busca a lista de colaboradores atualizada
+      if (precisaAtualizarTela) {
+        const { data: colabsAtualizados } = await supabase
+          .from("colaboradores")
+          .select("*");
+        setColaboradores(colabsAtualizados || []);
+      } else {
         setColaboradores(colabs || []);
       }
-    } catch (error) {
-      console.error("Erro fatal nos colaboradores:", error);
-    }
 
-    // 3. Busca Regras e Feriados
-    try {
+      // 5. Busca Regras
       const { data: regras } = await supabase.from("regras_setor").select("*");
       setRegrasSetor(regras || []);
-
-      const { data: feris } = await supabase
-        .from("feriados_coletivas")
-        .select("*");
-      setFeriados(feris || []);
     } catch (error) {
-      console.error("Erro nas regras/feriados:", error);
+      console.error("Erro ao buscar dados:", error);
     }
 
     setCarregando(false);
@@ -180,29 +254,37 @@ export default function Solicitacoes() {
     setSalvandoNova(true);
 
     try {
-      // Criamos a solicitação e já pedimos os dados do colaborador de volta
-      const { data, error } = await supabase
-        .from("solicitacoes")
-        .insert([
-          {
-            colaborador_id: novoColabId,
-            colaborador_nome: colabSelecionado?.colaborador_nome || "",
-            setor: colabSelecionado?.setor || "",
-            data_inicio: novaDataInicio,
-            data_fim: novaDataFim,
-            total_dias: diasCalculados,
-            status: "Pendente",
-            created_at: new Date().toISOString(),
-          },
-        ])
-        .select(`*, colaboradores (colaborador_nome, email)`)
-        .single();
+      const diasUteisSolicitados = calcularDiasLiquidos(
+        novaDataInicio,
+        novaDataFim,
+      );
+
+      const { error } = await supabase.from("solicitacoes").insert([
+        {
+          colaborador_id: novoColabId,
+          colaborador_nome: colabSelecionado?.colaborador_nome || "",
+          setor: colabSelecionado?.setor || "",
+          data_inicio: novaDataInicio,
+          data_fim: novaDataFim,
+          total_dias: diasUteisSolicitados,
+          status: "Pendente",
+          created_at: new Date().toISOString(),
+        },
+      ]);
 
       if (error) throw error;
 
-      // DISPARA E-MAIL DE SOLICITAÇÃO RECEBIDA
-      enviarEmailNotificacao(
-        data,
+      // Monta objeto para o e-mail pegando os dados diretos da tela
+      const dadosParaEmail = {
+        data_inicio: novaDataInicio,
+        data_fim: novaDataFim,
+        email: colabSelecionado?.email,
+        colaborador_nome: colabSelecionado?.colaborador_nome,
+      };
+
+      // DISPARA E-MAIL E ESPERA TERMINAR
+      await enviarEmailNotificacao(
+        dadosParaEmail,
         "Recebida",
         "Sua solicitação de férias foi recebida e está aguardando análise da gestão.",
       );
@@ -235,23 +317,23 @@ export default function Solicitacoes() {
     e.preventDefault();
     if (!editDataInicio || !editDataFim)
       return alert("As datas não podem ficar vazias!");
+
     setSalvandoEdicao(true);
-    const dias =
-      differenceInDays(parseISO(editDataFim), parseISO(editDataInicio)) + 1;
+    const diasUteisEditados = calcularDiasLiquidos(editDataInicio, editDataFim);
 
     try {
-      // Ajuste Inteligente: Soma ou diminui dos dias_gozados se o status mudar
       if (editStatus !== solAtual.status) {
         const { data: colab } = await supabase
           .from("colaboradores")
           .select("dias_gozados")
           .eq("id", solAtual.colaborador_id)
           .single();
+
         if (colab) {
           let novosGozados = colab.dias_gozados || 0;
-          if (editStatus === "Aprovada") novosGozados += dias; // Vai gozar esses dias
+          if (editStatus === "Aprovada") novosGozados += diasUteisEditados;
           if (solAtual.status === "Aprovada" && editStatus !== "Aprovada")
-            novosGozados -= solAtual.total_dias; // Estorna os dias
+            novosGozados -= solAtual.total_dias;
 
           await supabase
             .from("colaboradores")
@@ -265,7 +347,7 @@ export default function Solicitacoes() {
         .update({
           data_inicio: editDataInicio,
           data_fim: editDataFim,
-          total_dias: dias,
+          total_dias: diasUteisEditados,
           status: editStatus,
           updated_at: new Date().toISOString(),
           aprovado_por: usuarioLogado?.nome || "Sistema",
@@ -275,10 +357,10 @@ export default function Solicitacoes() {
       if (error) throw error;
 
       if (editStatus !== solAtual.status && editStatus !== "Pendente") {
-        enviarEmailNotificacao(
+        await enviarEmailNotificacao(
           solAtual,
           editStatus,
-          "Solicitação alterada manualmente.",
+          "Solicitação alterada manualmente no sistema.",
         );
       }
 
@@ -300,7 +382,6 @@ export default function Solicitacoes() {
     )
       return;
     try {
-      // Estorna os dias_gozados se for excluída e estava aprovada
       if (status === "Aprovada") {
         const { data: colab } = await supabase
           .from("colaboradores")
@@ -331,7 +412,6 @@ export default function Solicitacoes() {
     if (!confirm(`Deseja aplicar o status: ${novoStatus}?`)) return;
 
     try {
-      // Atualizando os "dias_gozados" diretamente
       const { data: colab } = await supabase
         .from("colaboradores")
         .select("dias_gozados")
@@ -341,12 +421,9 @@ export default function Solicitacoes() {
       if (colab) {
         let novosGozados = colab.dias_gozados || 0;
 
-        // Se aprovou, acrescenta os dias no saldo de gozados
         if (novoStatus === "Aprovada" && sol.status !== "Aprovada") {
           novosGozados += sol.total_dias;
-        }
-        // Se estava aprovada e agora foi reprovada (ESTORNO de gozados)
-        else if (sol.status === "Aprovada" && novoStatus !== "Aprovada") {
+        } else if (sol.status === "Aprovada" && novoStatus !== "Aprovada") {
           novosGozados -= sol.total_dias;
         }
 
@@ -368,7 +445,9 @@ export default function Solicitacoes() {
         .eq("id", sol.id);
 
       if (error) throw error;
-      enviarEmailNotificacao(sol, novoStatus, obs);
+
+      // Espera o E-mail ser enviado antes de atualizar e fechar a tela
+      await enviarEmailNotificacao(sol, novoStatus, obs);
 
       alert(`Sucesso! Status atualizado para ${novoStatus}.`);
       setModalAnaliseAberto(false);
@@ -520,7 +599,10 @@ export default function Solicitacoes() {
                     <span className="text-[9px] text-gray-500 font-bold uppercase block">
                       Total
                     </span>
-                    <span className="text-sm font-black text-orange-500">
+                    <span
+                      className="text-sm font-black text-orange-500"
+                      title="Dias Úteis (Descontando Feriados)"
+                    >
                       {sol.total_dias || 0}d
                     </span>
                   </div>
@@ -631,7 +713,10 @@ export default function Solicitacoes() {
                       </p>
                     </td>
                     <td className="p-4 text-center">
-                      <p className="font-mono text-gray-300 font-bold">
+                      <p
+                        className="font-mono text-gray-300 font-bold"
+                        title="Dias Úteis (Sem Feriados)"
+                      >
                         {item.total_dias || 0}d
                       </p>
                       <p className="text-[9px] text-gray-600 font-bold tracking-wider mt-1">
@@ -690,7 +775,7 @@ export default function Solicitacoes() {
       </section>
 
       {/* ========================================== */}
-      {/* MODAL NOVA SOLICITAÇÃO (Com a sua lógica de dias) */}
+      {/* MODAL NOVA SOLICITAÇÃO */}
       {/* ========================================== */}
       {modalNovoAberto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
@@ -733,7 +818,7 @@ export default function Solicitacoes() {
                 />
               </div>
 
-              {/* PAINEL INTELIGENTE (Usa Direito - Gozados) */}
+              {/* PAINEL INTELIGENTE (Usa Direito - Gozados e Calcula Feriados) */}
               {novoColabId && novaDataInicio && novaDataFim && (
                 <div
                   className={`p-4 rounded-xl border ${saldoInsuficiente || datasInvertidas ? "bg-red-900/10 border-red-900/50" : "bg-[#161616] border-[#333]"}`}
@@ -743,7 +828,7 @@ export default function Solicitacoes() {
                       Direito ({diasDireito}) - Gozados ({diasGozados})
                     </span>
                     <span className="text-[10px] text-gray-400 font-bold uppercase">
-                      A Pedir
+                      A Pedir (Líquido)
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
@@ -766,8 +851,7 @@ export default function Solicitacoes() {
                   )}
                   {saldoInsuficiente && !datasInvertidas && (
                     <p className="text-[10px] text-yellow-500 font-bold uppercase flex items-center gap-1 mt-3">
-                      <AlertCircle size={14} /> Atenção: Pedido excede os dias a
-                      gozar!
+                      <AlertCircle size={14} /> Atenção: Pedido excede o saldo!
                     </p>
                   )}
                 </div>
@@ -776,9 +860,9 @@ export default function Solicitacoes() {
               <button
                 type="submit"
                 disabled={salvandoNova || datasInvertidas}
-                className={`w-full py-4 rounded-xl font-black uppercase tracking-widest transition-colors mt-2 ${datasInvertidas ? "bg-gray-800 text-gray-500 cursor-not-allowed" : "bg-orange-600 hover:bg-orange-500 text-white"}`}
+                className={`w-full py-4 rounded-xl font-black uppercase tracking-widest transition-colors mt-2 ${datasInvertidas || salvandoNova ? "bg-gray-800 text-gray-500 cursor-not-allowed" : "bg-orange-600 hover:bg-orange-500 text-white"}`}
               >
-                {salvandoNova ? "Salvando..." : "Criar Solicitação"}
+                {salvandoNova ? "Enviando E-mail..." : "Criar Solicitação"}
               </button>
             </form>
           </div>
@@ -897,7 +981,7 @@ export default function Solicitacoes() {
                         decidirSolicitacao(
                           solAtual,
                           "Sugerida",
-                          "Sugestão automática",
+                          "Sugestão automática do sistema.",
                         )
                       }
                       className="w-full bg-purple-600 hover:bg-purple-500 mt-4 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-colors text-white"

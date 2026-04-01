@@ -455,12 +455,32 @@ export default function Colaboradores() {
               <select
                 value={filtroStatus}
                 onChange={(e) => setFiltroStatus(e.target.value)}
-                className="bg-transparent text-xs font-black uppercase p-3.5 outline-none cursor-pointer [color-scheme:dark]"
+                className="bg-transparent text-xs font-black uppercase p-3.5 outline-none cursor-pointer text-gray-300 focus:text-white"
               >
-                <option value="todos">Todos Status</option>
-                <option value="EM DIA">Em Dia</option>
-                <option value="EM ALERTA">Em Alerta</option>
-                <option value="VENCIDA (DOBRA)">Vencidas</option>
+                <option
+                  value="todos"
+                  className="bg-[#111] text-white font-medium py-2"
+                >
+                  Todos Status
+                </option>
+                <option
+                  value="EM DIA"
+                  className="bg-[#111] text-green-500 font-bold py-2"
+                >
+                  Em Dia
+                </option>
+                <option
+                  value="EM ALERTA"
+                  className="bg-[#111] text-yellow-500 font-bold py-2"
+                >
+                  Em Alerta
+                </option>
+                <option
+                  value="VENCIDA (DOBRA)"
+                  className="bg-[#111] text-red-500 font-bold py-2"
+                >
+                  Vencidas
+                </option>
               </select>
             </div>
           </div>

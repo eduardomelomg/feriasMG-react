@@ -82,20 +82,20 @@ export default function Sidebar() {
   // 🚀 NOVA REGRA INTELIGENTE DE PERMISSÕES
   const menusPermitidos = menuItems.filter((item) => {
     if (!usuarioLogado?.perfil) return false;
-
-    // Transforma tudo pra maiúsculo pra não ter erro de digitação
-    const perfil = usuarioLogado.perfil.toUpperCase().trim();
-
-    // 1. O Administrador manda em tudo
-    if (perfil === "ADMINISTRADOR") return true;
-
+    
+    // Transforma tudo pra maiúsculo pra não ter erro
+    const perfil = String(usuarioLogado.perfil).toUpperCase().trim();
+    
+    // 1. O Administrador manda em tudo (Qualquer cargo que tenha "ADMIN" no nome)
+    if (perfil.includes("ADMINISTRADOR")) return true;
+    
     // 2. Gestor e Coordenador não veem a tela de Usuários
-    if (perfil === "GESTOR" || perfil === "COORDENADOR") {
+    if (perfil.includes("GESTOR") || perfil.includes("COORDENADOR")) {
       return !item.adminOnly;
     }
-
+    
     // 3. Analista vê apenas o básico
-    if (perfil === "ANALISTA") {
+    if (perfil.includes("ANALISTA")) {
       return !item.adminOnly && !item.restritoAnalista;
     }
 

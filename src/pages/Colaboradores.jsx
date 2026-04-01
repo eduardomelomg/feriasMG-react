@@ -56,12 +56,54 @@ export default function Colaboradores() {
   async function buscarColaboradores() {
     try {
       setCarregando(true);
-      const { data, error } = await supabase
+
+      // 1. Busca todos os colaboradores
+      const { data: colabs, error } = await supabase
         .from("colaboradores")
         .select("*")
         .order("colaborador_nome", { ascending: true });
+
       if (error) throw error;
-      setColaboradores(data || []);
+
+      // 2. Busca solicitações aprovadas para verificar o Reset de Ciclo
+      const { data: aprovadas } = await supabase
+        .from("solicitacoes")
+        .select("colaborador_id, data_fim, status")
+        .eq("status", "Aprovada");
+
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0); // Zera a hora para comparar apenas o dia
+
+      const colabsAtualizados = [...(colabs || [])];
+
+      // 3. Aplica o Reset Automaticamente se as férias terminaram
+      if (aprovadas) {
+        for (let i = 0; i < colabsAtualizados.length; i++) {
+          const colab = colabsAtualizados[i];
+          const feriasTerminadas = aprovadas.find(
+            (s) =>
+              s.colaborador_id === colab.id &&
+              parseISO(s.data_fim) < hoje &&
+              colab.dias_gozados > 0,
+          );
+
+          if (feriasTerminadas) {
+            console.log(
+              `🔄 Resetando ciclo de ${colab.colaborador_nome} na tela de Colaboradores.`,
+            );
+            // Zera no banco
+            await supabase
+              .from("colaboradores")
+              .update({ dias_gozados: 0 })
+              .eq("id", colab.id);
+
+            // Zera na tela imediatamente
+            colabsAtualizados[i].dias_gozados = 0;
+          }
+        }
+      }
+
+      setColaboradores(colabsAtualizados);
     } catch (error) {
       console.error(error.message);
     } finally {

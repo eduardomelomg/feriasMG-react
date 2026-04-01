@@ -12,7 +12,7 @@ import {
   LogOut,
 } from "lucide-react";
 
-// 1. Importe sua logo aqui (ajuste o nome do arquivo se for .svg, .png ou .jpg)
+// Importe sua logo aqui
 import logoMarca from "../assets/LogoV2.png";
 
 export default function Sidebar() {
@@ -26,7 +26,7 @@ export default function Sidebar() {
         const { count, error } = await supabase
           .from("solicitacoes")
           .select("*", { count: "exact", head: true })
-          .eq("status", "pendente");
+          .eq("status", "Pendente"); // <-- Corrigido para "Pendente" com P maiúsculo (como você salvou no banco)
 
         if (!error) setContagem(count || 0);
       } catch (err) {
@@ -63,26 +63,43 @@ export default function Sidebar() {
       name: "Colaboradores",
       path: "/colaboradores",
       icon: <Users size={20} />,
+      restritoAnalista: true, // Bloqueia para analistas
     },
     {
       name: "Usuários",
       path: "/usuarios",
       icon: <UserCog size={20} />,
-      adminOnly: true,
+      adminOnly: true, // Só o chefão vê
     },
     {
       name: "Configurações",
       path: "/configuracoes",
       icon: <Settings size={20} />,
+      restritoAnalista: true, // Bloqueia para analistas
     },
   ];
 
+  // 🚀 NOVA REGRA INTELIGENTE DE PERMISSÕES
   const menusPermitidos = menuItems.filter((item) => {
     if (!usuarioLogado?.perfil) return false;
-    const p = usuarioLogado.perfil.toUpperCase().trim();
-    if (p === "ADMINISTRADOR (TI)" || p === "GESTÃO DP") return true;
-    if (p === "COORDENADOR") return !item.adminOnly;
-    return false;
+
+    // Transforma tudo pra maiúsculo pra não ter erro de digitação
+    const perfil = usuarioLogado.perfil.toUpperCase().trim();
+
+    // 1. O Administrador manda em tudo
+    if (perfil === "ADMINISTRADOR") return true;
+
+    // 2. Gestor e Coordenador não veem a tela de Usuários
+    if (perfil === "GESTOR" || perfil === "COORDENADOR") {
+      return !item.adminOnly;
+    }
+
+    // 3. Analista vê apenas o básico
+    if (perfil === "ANALISTA") {
+      return !item.adminOnly && !item.restritoAnalista;
+    }
+
+    return false; // Por segurança, bloqueia se cair em algum buraco negro
   });
 
   const fazerLogout = async () => {
@@ -97,7 +114,6 @@ export default function Sidebar() {
           src={logoMarca}
           alt="Mendonça Galvão"
           className="w-10 h-10 object-contain rounded-lg"
-          // Caso a logo não carregue, ele mantém o estilo do container
           onError={(e) => {
             e.target.style.display = "none";
           }}
@@ -150,12 +166,20 @@ export default function Sidebar() {
         })}
       </nav>
 
+      {/* RODAPÉ DO MENU (INFORMAÇÕES DO USUÁRIO LOGADO) */}
       <div className="p-4 border-t border-[#222]">
-        <div className="bg-[#1a1a1a] p-2 rounded border border-orange-900/30 flex items-center gap-2 mb-4">
-          <div className="w-2 h-2 rounded-full bg-orange-500"></div>
-          <span className="text-orange-400 text-[10px] font-bold uppercase tracking-tighter truncate">
-            {usuarioLogado?.perfil}
-          </span>
+        <div className="bg-[#1a1a1a] p-2 rounded border border-orange-900/30 flex flex-col gap-1 mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+            <span className="text-orange-400 text-[10px] font-bold uppercase tracking-tighter truncate">
+              {usuarioLogado?.perfil || "Sem Perfil"}
+            </span>
+          </div>
+          {usuarioLogado?.setor && usuarioLogado.setor !== "Global" && (
+            <span className="text-[9px] text-gray-500 uppercase tracking-widest pl-4 truncate block">
+              {usuarioLogado.setor}
+            </span>
+          )}
         </div>
 
         <div className="flex items-center justify-between px-1">

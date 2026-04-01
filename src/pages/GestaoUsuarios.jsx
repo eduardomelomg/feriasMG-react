@@ -32,29 +32,34 @@ export default function GestaoUsuarios() {
   const [editStatus, setEditStatus] = useState("ativo");
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
 
+  // Listas Limpas e Separadas
   const listaPerfis = ["Administrador", "Coordenador", "Gestor", "Analista"];
 
-  // A LISTA VIP DE SETORES E CARGOS
   const listaSetores = [
-    "Todos (Global)",
+    "Global", // Antigo "Todos"
     "Contábil",
-    "Coordenador Contábil",
     "Departamento Pessoal",
-    "Coordenador DP",
     "Financeiro",
-    "Coordenador Financeiro",
     "Fiscal",
-    "Coordenador Fiscal",
     "Recursos Humanos",
-    "Coordenador RH",
     "Tecnologia da Informação",
-    "Coordenador TI",
-    "Administrador TI",
     "Diretoria",
-    "Gerência",
     "Comercial",
     "Operacional",
   ];
+
+  // Função auxiliar para traduzir o nome do setor na hora de juntar com o cargo
+  const obterNomeSetorCurto = (setorLongo) => {
+    const traducoes = {
+      "Departamento Pessoal": "DP",
+      "Recursos Humanos": "RH",
+      "Tecnologia da Informação": "TI",
+      Global: "", // Global não precisa aparecer no nome (Ex: Adminstrador)
+    };
+    return traducoes[setorLongo] !== undefined
+      ? traducoes[setorLongo]
+      : setorLongo;
+  };
 
   // --- 1. BUSCAR USUÁRIOS ---
   async function buscarUsuarios() {
@@ -78,13 +83,13 @@ export default function GestaoUsuarios() {
     buscarUsuarios();
   }, []);
 
-  // --- 2. CADASTRAR USUÁRIO (COM GATILHO DUPLO) ---
+  // --- 2. CADASTRAR USUÁRIO (COM GATILHO DUPLO INTELIGENTE) ---
   const cadastrarUsuario = async (e) => {
     e.preventDefault();
     if (!nome || !email) return alert("Nome e e-mail são obrigatórios!");
 
     try {
-      // 1º Gatilho: Salvar na tabela de acessos do sistema
+      // 1º Gatilho: Salvar o acesso
       const { error: errUser } = await supabase
         .from("usuarios_sistema")
         .insert([
@@ -104,19 +109,21 @@ export default function GestaoUsuarios() {
         throw errUser;
       }
 
-      // 2º Gatilho: Criar automaticamente a ficha na tabela de colaboradores
-      // Se ele for de "Todos (Global)", jogamos na Diretoria para não bugar o outro painel
-      const setorColaborador = setor === "Todos (Global)" ? "Diretoria" : setor;
-      const dataHoje = new Date().toISOString().split("T")[0]; // Data atual YYYY-MM-DD
+      // 2º Gatilho: Criar a ficha do colaborador
+      // Junta o Perfil + Setor (Ex: Coordenador + TI = Coordenador TI)
+      const nomeSetorCurto = obterNomeSetorCurto(setor);
+      const cargoCombinado = `${perfil} ${nomeSetorCurto}`.trim();
+
+      const dataHoje = new Date().toISOString().split("T")[0];
 
       const { error: errColab } = await supabase.from("colaboradores").insert([
         {
           colaborador_nome: nome,
           email: email,
-          setor: setorColaborador,
-          data_admissao: dataHoje, // Preenche hoje por padrão
+          setor: cargoCombinado, // Salva o nome combinado perfeito
+          data_admissao: dataHoje,
           status: "ativo",
-          dias_direito: 30, // 30 dias por padrão
+          dias_direito: 30,
           dias_gozados: 0,
         },
       ]);
@@ -196,7 +203,6 @@ export default function GestaoUsuarios() {
     }
   };
 
-  // Função para dar cor visual aos perfis
   const corDoPerfil = (perfilName) => {
     if (perfilName.includes("Administrador"))
       return "border-purple-900 text-purple-400 bg-purple-900/10";
@@ -204,7 +210,7 @@ export default function GestaoUsuarios() {
       return "border-blue-900 text-blue-400 bg-blue-900/10";
     if (perfilName.includes("Analista"))
       return "border-pink-900 text-pink-400 bg-pink-900/10";
-    return "border-emerald-900 text-emerald-400 bg-emerald-900/10"; // Gestor
+    return "border-emerald-900 text-emerald-400 bg-emerald-900/10";
   };
 
   return (
@@ -215,7 +221,6 @@ export default function GestaoUsuarios() {
       </h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* --- FORMULÁRIO DE CADASTRO --- */}
         <div className="lg:col-span-4 bg-[#111] border border-[#222] p-6 rounded-xl h-fit">
           <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
             <UserCog size={18} className="text-orange-500" /> Novo Acesso
@@ -291,8 +296,10 @@ export default function GestaoUsuarios() {
             <div className="bg-orange-500/10 border border-orange-500/20 p-3 rounded-lg mt-4 flex gap-3 items-start">
               <Lock size={16} className="text-orange-500 shrink-0 mt-0.5" />
               <p className="text-xs text-orange-500/80 leading-relaxed">
-                Atenção: Ao conceder acesso, uma ficha de colaborador com 30
-                dias de férias também será gerada.
+                Atenção: A ficha deste colaborador será gerada no setor: <br />
+                <strong className="text-orange-400">
+                  "{perfil} {obterNomeSetorCurto(setor)}"
+                </strong>
               </p>
             </div>
 
@@ -305,7 +312,6 @@ export default function GestaoUsuarios() {
           </form>
         </div>
 
-        {/* --- LISTAGEM DE USUÁRIOS --- */}
         <div className="lg:col-span-8 bg-[#111] border border-[#222] rounded-xl overflow-hidden shadow-xl h-fit">
           <div className="p-4 border-b border-[#222] bg-[#161616] flex justify-between items-center">
             <h2 className="text-white font-semibold text-sm">
@@ -388,7 +394,6 @@ export default function GestaoUsuarios() {
         </div>
       </div>
 
-      {/* --- MODAL DE EDIÇÃO --- */}
       {modalEdicaoAberto && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in zoom-in duration-200">
           <div className="bg-[#111] border border-[#222] rounded-2xl w-full max-w-md shadow-2xl relative p-6">

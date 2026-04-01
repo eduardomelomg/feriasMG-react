@@ -20,11 +20,11 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        // 2. Verificação na Tabela
+        // 2. Verificação na Tabela (Agora puxando TUDO com o '*')
         const { data, error } = await supabase
           .from("usuarios_sistema")
-          .select("nome, perfil")
-          .eq("email", authUser.email.toLowerCase()) // Forçamos busca em minúsculo
+          .select("*")
+          .eq("email", authUser.email.toLowerCase())
           .single();
 
         if (error || !data) {
@@ -39,12 +39,27 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        console.log("✅ Segurança: Acesso liberado para", data.nome);
+        // Se o usuário estiver bloqueado
+        if (data.status === "bloqueado") {
+          alert("ACESSO BLOQUEADO: Contate a gestão.");
+          await supabase.auth.signOut();
+          return;
+        }
+
+        console.log(
+          "✅ Segurança: Acesso liberado para",
+          data.nome,
+          "| Perfil:",
+          data.perfil,
+        );
+
+        // Repassando todas as informações vitais para o sistema
         setUsuarioLogado({
           id: authUser.id,
           email: authUser.email,
           nome: data.nome,
           perfil: data.perfil,
+          setor: data.setor, // <-- Agora o setor vai pro menu!
           iniciais: data.nome ? data.nome.substring(0, 2).toUpperCase() : "MG",
         });
       } catch (err) {
